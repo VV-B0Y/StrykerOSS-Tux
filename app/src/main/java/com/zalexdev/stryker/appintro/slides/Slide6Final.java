@@ -29,12 +29,16 @@ public class Slide6Final extends Fragment {
         TextView successTitle = view.findViewById(R.id.success_title);
         TextView successSub = view.findViewById(R.id.success_subtitle);
         TextView shellText = view.findViewById(R.id.cap_shell_text);
-        if (EngineType.isRootless(core)) {
-            if (successTitle != null) successTitle.setText("VM ready");
-            if (successSub != null) successSub.setText("Debian guest live — USB adapter auto-attaches for WiFi");
+        boolean chroot = EngineType.chrootInstalled(core);
+        boolean vm = core.vmInstalled();
+        if (successTitle != null) successTitle.setText("Setup complete");
+        if (chroot && vm) {
+            if (successSub != null) successSub.setText("Chroot and rootless VM are ready — switch engines from the dashboard");
+            if (shellText != null) shellText.setText("Pick an engine on the dashboard, then open a shell");
+        } else if (vm) {
+            if (successSub != null) successSub.setText("Rootless VM ready — USB adapter auto-attaches for WiFi");
             if (shellText != null) shellText.setText("Drop into the VM shell from the dashboard");
         } else {
-            if (successTitle != null) successTitle.setText("Chroot mounted");
             if (successSub != null) successSub.setText("Debian toolset live at " + Core.CHROOT_ROOT);
             if (shellText != null) shellText.setText("Open a chrooted shell from the dashboard");
         }

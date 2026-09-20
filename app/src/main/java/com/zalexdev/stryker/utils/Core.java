@@ -1108,6 +1108,16 @@ public class Core {
         return RootlessEngine.get(context);
     }
 
+    /** Whether the chroot rootfs is present on disk (host-side check, no su). */
+    public boolean chrootInstalled() {
+        return new File(CHROOT_MARKER).isFile();
+    }
+
+    /** Whether the rootless VM artifacts are installed. */
+    public boolean vmInstalled() {
+        return rootless().isInstalled();
+    }
+
     public ArrayList<String> customChrootCommand(String command)  {
         if (isRootless()) {
             String tool = LogTool.classify(command);

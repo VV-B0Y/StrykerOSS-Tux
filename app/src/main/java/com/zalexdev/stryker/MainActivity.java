@@ -84,6 +84,8 @@ public class MainActivity extends AppCompatActivity {
     private static final HashMap<Integer, View> drawerRows = new HashMap<>();
     private static volatile boolean rootlessEngine;
     private static volatile boolean vmReady;
+    private static volatile boolean rootAvailable;
+    private static volatile boolean chrootMounted;
     private boolean engineWatchPending;
     private View engineStatusView;
     private DrawerLayout engineStatusDrawer;
@@ -201,6 +203,8 @@ public class MainActivity extends AppCompatActivity {
         if (chrootStatus == null && statusDot == null) return;
         if (!com.zalexdev.stryker.engine.EngineType.isChosen(core)) {
             vmReady = false;
+            rootAvailable = false;
+            chrootMounted = false;
             if (chrootStatus != null) chrootStatus.setText(R.string.engine_not_chosen);
             if (statusDot != null) {
                 try {
@@ -212,11 +216,19 @@ public class MainActivity extends AppCompatActivity {
         }
         new Thread(() -> {
             boolean rootless = core.isRootless();
-            boolean mounted = !rootless && core.isMounted();
-            com.zalexdev.stryker.engine.EngineStatus es =
-                    com.zalexdev.stryker.engine.EngineStatus.current(core, mounted, rootless);
+            boolean rootOk = com.zalexdev.stryker.engine.EngineType.rootAvailable(core);
+            boolean mounted = rootOk && core.isMounted();
+            com.zalexdev.stryker.engine.EngineStatus es = rootless
+                    ? com.zalexdev.stryker.engine.EngineStatus.current(core, false, true)
+                    : com.zalexdev.stryker.engine.EngineStatus.current(core, mounted);
+            final boolean fRootless = rootless;
+            final boolean fRootOk = rootOk;
+            final boolean fMounted = mounted;
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
+                rootlessEngine = fRootless;
+                rootAvailable = fRootOk;
+                chrootMounted = fMounted;
                 if (chrootStatus != null) chrootStatus.setText(es.label);
                 if (statusDot != null) {
                     try {
@@ -232,7 +244,7 @@ public class MainActivity extends AppCompatActivity {
                 // While the VM is still coming up every tool stays locked, so keep re-checking
                 // until the guest answers — otherwise the rows only unlock when the drawer is
                 // reopened by hand.
-                if (rootless && !es.ready && !engineWatchPending) {
+                if (fRootless && !es.ready && !engineWatchPending) {
                     engineWatchPending = true;
                     navView.postDelayed(() -> {
                         engineWatchPending = false;
@@ -268,7 +280,8 @@ public class MainActivity extends AppCompatActivity {
 
             boolean rootOnly = ROOT_ONLY_IDS.contains(rowId);
             boolean needsVm = rootless && !vmReady && !VM_INDEPENDENT_IDS.contains(rowId);
-            boolean locked = rootless && (rootOnly || needsVm);
+            boolean needsChroot = !rootless && !chrootMounted && !VM_INDEPENDENT_IDS.contains(rowId);
+            boolean locked = (rootOnly && !rootAvailable) || needsVm || needsChroot;
 
             if (badge != null && rootOnly) {
                 badge.setText("ROOT");
@@ -278,9 +291,14 @@ public class MainActivity extends AppCompatActivity {
             }
 
             if (locked) {
-                final String why = rootOnly
-                        ? spec.title + " needs root hardware — unavailable on the rootless VM"
-                        : spec.title + " needs the VM — start it from the dashboard first";
+                final String why;
+                if (rootOnly) {
+                    why = spec.title + " needs root hardware — root is not available";
+                } else if (rootless) {
+                    why = spec.title + " needs the VM — start it from the dashboard first";
+                } else {
+                    why = spec.title + " needs the chroot — mount it from the dashboard first";
+                }
                 row.setAlpha(0.45f);
                 row.setOnClickListener(v -> android.widget.Toast.makeText(this, why,
                         android.widget.Toast.LENGTH_SHORT).show());
@@ -521,55 +539,59 @@ public class MainActivity extends AppCompatActivity {
                 () -> PromoDialogs.maybeShow(MainActivity.this), 1500);
     }
 
-    private void startRootlessLaunch() {
-        if (!core.getBoolean("first_open")
-                || !com.zalexdev.stryker.engine.RootlessEngine.get(this).isInstalled()) {
+    private void runLaunchFlow() {
+        if (core == null || landed || launchRunning) return;
+        launchRunning = true;
+
+        if (!core.getBoolean("first_open")) {
             core.putString("username", "User");
             launchRunning = false;
             startActivity(new Intent(this, AppIntroActivity.class));
             return;
         }
-        com.zalexdev.stryker.engine.RootlessService.start(this);
-        landOn(new Dashboard());
-        schedulePromo();
-        checkForUsb();
-        if (!isConnected()) {
-            new Thread(() -> core.getInterfacesList()).start();
-        }
-    }
 
-    private void runLaunchFlow() {
-        if (core == null || landed || launchRunning) return;
-        launchRunning = true;
-        if (core.isRootless()) {
-            startRootlessLaunch();
-            return;
-        }
-        if (!core.getBoolean("first_open") || !core.checkFile(Core.CHROOT_MARKER)) {
-            // A pre-6 install leaves the old Alpine tree behind with its own marker. It cannot run
-            // the Debian toolset, so route straight into the installer, which unmounts and wipes it
-            // before fetching the rootfs the manifest offers this build.
-            core.putString("username", "User");
-            launchRunning = false;
-            Intent intro = new Intent(this, AppIntroActivity.class);
-            if (core.hasLegacyChroot()) intro.putExtra(AppIntroActivity.EXTRA_MIGRATE, true);
-            startActivity(intro);
-            return;
-        }
         new Thread(() -> {
-            if (!core.checkFolder("/data/local/stryker/release/usr")) {
+            boolean vmInstalled = core.vmInstalled();
+            boolean chrootInstalled = core.chrootInstalled();
+
+            // A chroot marker without the toolset is a half-finished install — send it back
+            // through the installer.
+            if (chrootInstalled && !core.checkFolder("/data/local/stryker/release/usr")) {
                 launchRunning = false;
-                Intent install = new Intent(this, AppIntroActivity.class);
-                install.putExtra("update", false);
-                startActivity(install);
+                startActivity(new Intent(MainActivity.this, AppIntroActivity.class));
                 return;
             }
-            boolean mounted = core.isMounted() || core.mountCore();
-            if (!mounted) {
-                landOn(new Error());
+
+            if (!vmInstalled && !chrootInstalled) {
+                launchRunning = false;
+                Intent intro = new Intent(MainActivity.this, AppIntroActivity.class);
+                if (core.hasLegacyChroot()) intro.putExtra(AppIntroActivity.EXTRA_MIGRATE, true);
+                startActivity(intro);
                 return;
             }
+
+            // Bring up the ACTIVE engine; if it isn't installed, fall back to the other.
+            boolean rootless = core.isRootless();
+            if (rootless && !vmInstalled) {
+                rootless = false;
+                com.zalexdev.stryker.engine.EngineType.persist(core, com.zalexdev.stryker.engine.EngineType.CHROOT);
+            } else if (!rootless && !chrootInstalled && vmInstalled) {
+                rootless = true;
+                com.zalexdev.stryker.engine.EngineType.persist(core, com.zalexdev.stryker.engine.EngineType.ROOTLESS);
+            }
+
+            if (rootless) {
+                // VM is the active engine — boot it (expensive, so only when it is actually used).
+                com.zalexdev.stryker.engine.RootlessService.start(MainActivity.this);
+            } else {
+                if (!(core.isMounted() || core.mountCore())) {
+                    landOn(new Error());
+                    return;
+                }
+            }
+
             landOn(new Dashboard());
+            refreshEngineStatus();
             runOnUiThread(() -> {
                 schedulePromo();
                 checkForUsb();
@@ -820,18 +842,25 @@ public class MainActivity extends AppCompatActivity {
         }
 
         public void changeFragment(int itemId, int enterAnim, int exitAnim) {
-            if (rootlessEngine && settings != null) {
-                DrawerSpec spec = DRAWER_SPECS.get(itemId);
-                String name = spec == null ? "This tool" : spec.title;
-                if (ROOT_ONLY_IDS.contains(itemId)) {
+            DrawerSpec spec = DRAWER_SPECS.get(itemId);
+            String name = spec == null ? "This tool" : spec.title;
+            if (ROOT_ONLY_IDS.contains(itemId)) {
+                if (!rootAvailable && settings != null) {
                     android.widget.Toast.makeText(settings.getContext(),
-                            name + " needs root hardware — unavailable on the rootless VM",
+                            name + " needs root hardware — root is not available",
                             android.widget.Toast.LENGTH_SHORT).show();
                     return;
                 }
-                if (!vmReady && !VM_INDEPENDENT_IDS.contains(itemId)) {
+            } else if (!VM_INDEPENDENT_IDS.contains(itemId)) {
+                if (rootlessEngine && !vmReady && settings != null) {
                     android.widget.Toast.makeText(settings.getContext(),
                             name + " needs the VM — start it from the dashboard first",
+                            android.widget.Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                if (!rootlessEngine && !chrootMounted && settings != null) {
+                    android.widget.Toast.makeText(settings.getContext(),
+                            name + " needs the chroot — mount it from the dashboard first",
                             android.widget.Toast.LENGTH_SHORT).show();
                     return;
                 }

@@ -97,10 +97,14 @@ public class Slide2 extends Fragment {
             core.checkPermission(activity);
             boolean rootless = core.isRootless();
             boolean rooted = !rootless && core.checkRoot();
+            boolean canRootless = com.zalexdev.stryker.engine.EngineType.rootlessSupported(context);
             rootChecked = true;
             rootGranted = rooted;
 
-            if (rooted || rootless) {
+            // No root is not fatal when the rootless engine is an option: proceed so the next
+            // slide's capability check can offer the rootless fallback for a chroot that was
+            // ticked optimistically.
+            if (rooted || rootless || canRootless) {
                 if (rooted) {
                     core.customCommand("pm grant com.zalexdev.stryker android.permission.WRITE_EXTERNAL_STORAGE", true);
                     core.customCommand("pm grant com.zalexdev.stryker android.permission.READ_EXTERNAL_STORAGE", true);

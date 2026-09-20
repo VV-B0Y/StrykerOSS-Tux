@@ -51,4 +51,27 @@ public enum EngineType {
         }
         return false;
     }
+
+    /**
+     * Whether root (su) is available on this device, independent of the active engine.
+     * Blocking (spawns a root shell) — call off the main thread.
+     */
+    public static boolean rootAvailable(Core core) {
+        return core != null && core.checkRoot();
+    }
+
+    /** Whether the chroot rootfs is present on disk. Non-blocking (plain file check). */
+    public static boolean chrootInstalled(Core core) {
+        return core != null && core.chrootInstalled();
+    }
+
+    /** Whether the chroot engine is usable: root present AND rootfs installed. */
+    public static boolean chrootAvailable(Core core) {
+        return core != null && core.checkRoot() && core.chrootInstalled();
+    }
+
+    /** Whether the rootless VM engine is usable: its artifacts are installed. */
+    public static boolean rootlessAvailable(Core core) {
+        return core != null && core.rootless().isInstalled();
+    }
 }

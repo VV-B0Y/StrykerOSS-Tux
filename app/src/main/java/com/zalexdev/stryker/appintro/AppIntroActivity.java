@@ -25,7 +25,9 @@ import com.zalexdev.stryker.engine.EngineType;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 public class AppIntroActivity extends FragmentActivity {
 
@@ -77,13 +79,18 @@ public class AppIntroActivity extends FragmentActivity {
     }
 
     public void applyEngineFlow(EngineType type) {
+        applyEngineFlow(Collections.singleton(type));
+    }
+
+    public void applyEngineFlow(Set<EngineType> selected) {
         while (pages.size() > 2) pages.remove(pages.size() - 1);
         pages.add(Page.PERMS);
-        if (type == EngineType.ROOTLESS) {
-            pages.add(Page.INSTALL_QEMU);
-        } else {
+        if (selected.contains(EngineType.CHROOT)) {
             pages.add(Page.PCHECK);
             pages.add(Page.INSTALL_CHROOT);
+        }
+        if (selected.contains(EngineType.ROOTLESS)) {
+            pages.add(Page.INSTALL_QEMU);
         }
         pages.add(Page.FINAL);
         pagerAdapter.notifyDataSetChanged();
@@ -92,6 +99,11 @@ public class AppIntroActivity extends FragmentActivity {
 
     public void jumpToLast() {
         mPager.setCurrentItem(pages.size() - 1);
+    }
+
+    public void jumpTo(Page target) {
+        int idx = pages.indexOf(target);
+        if (idx >= 0) mPager.setCurrentItem(idx, false);
     }
 
     private void bindProgress(int position) {

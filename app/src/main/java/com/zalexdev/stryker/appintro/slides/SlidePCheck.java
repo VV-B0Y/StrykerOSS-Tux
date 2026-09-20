@@ -101,7 +101,8 @@ public class SlidePCheck extends Fragment {
             if (switchToRootless) {
                 EngineType.persist(core, EngineType.ROOTLESS);
                 ((AppIntroActivity) activity).applyEngineFlow(EngineType.ROOTLESS);
-                mPager.post(() -> core.moveNext(mPager));
+                mPager.post(() -> ((AppIntroActivity) activity)
+                        .jumpTo(AppIntroActivity.Page.INSTALL_QEMU));
                 return;
             }
             if (checked) {

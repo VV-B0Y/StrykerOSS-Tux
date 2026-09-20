@@ -32,7 +32,7 @@ import com.google.android.material.snackbar.Snackbar;
 import com.zalexdev.stryker.MainActivity;
 import com.zalexdev.stryker.R;
 import com.zalexdev.stryker.arsenal.ArsenalFragment;
-import com.zalexdev.stryker.engine.EngineStatus;
+import com.zalexdev.stryker.engine.EngineType;
 import com.zalexdev.stryker.engine.RootlessEngine;
 import com.zalexdev.stryker.engine.RootlessService;
 import com.zalexdev.stryker.engine.VmBootStage;
@@ -67,6 +67,12 @@ public class Dashboard extends Fragment {
     private SparklineView vmCpuGraph, vmRamGraph;
     private VmRingView vmRing;
     private ExpandableLayout vmStatusExpand, vmLogsExpand;
+
+    private View chrootCard;
+    private TextView chrootBadge, chrootSpecs;
+    private MaterialButton chrootMountBtn;
+    private com.google.android.material.button.MaterialButtonToggleGroup engineToggleGroup;
+
     private final Handler vmHandler = new Handler(Looper.getMainLooper());
     private boolean vmRefreshing = false;
     private Runnable vmTick;
@@ -171,6 +177,8 @@ public class Dashboard extends Fragment {
             }).start();
         }
 
+        setupEngineSelector(view);
+        setupChrootCard(view);
         setupVmCard(view);
 
         showFirstScanTip(menuWifi);
@@ -180,6 +188,10 @@ public class Dashboard extends Fragment {
     private void setupVmCard(View view) {
         vmCard = view.findViewById(R.id.vm_card);
         if (vmCard == null) return;
+        if (!core.vmInstalled()) {
+            vmCard.setVisibility(View.GONE);
+            return;
+        }
         vmCard.setVisibility(View.VISIBLE);
 
         TextView cardTitle = view.findViewById(R.id.vm_card_title);
@@ -189,18 +201,6 @@ public class Dashboard extends Fragment {
         vmStatusChevron = view.findViewById(R.id.vm_status_chevron);
         vmStatusExpand = view.findViewById(R.id.vm_status_expand);
         vmRing = view.findViewById(R.id.vm_ring);
-
-        if (!core.isRootless()) {
-            if (cardTitle != null) cardTitle.setText("Chroot engine");
-            if (vmUsb != null) vmUsb.setVisibility(View.GONE);
-            if (vmStatusChevron != null) vmStatusChevron.setVisibility(View.GONE);
-            hide(view, R.id.vm_status_expand, R.id.vm_controls_row, R.id.vm_console_divider,
-                    R.id.vm_stats_header, R.id.vm_stats_expand, R.id.vm_divider_usb,
-                    R.id.vm_usb_header, R.id.vm_usb_expand, R.id.vm_divider_logs,
-                    R.id.vm_logs_header, R.id.vm_logs_expand);
-            refreshChrootStatus();
-            return;
-        }
 
         view.findViewById(R.id.vm_status_header).setOnClickListener(v -> {
             vmStatusExpand.toggle();
@@ -518,29 +518,97 @@ public class Dashboard extends Fragment {
         });
     }
 
-    @SuppressLint("SetTextI18n")
-    private void refreshChrootStatus() {
-        if (vmBadge == null) return;
+    private void setupEngineSelector(View view) {
+        final View selectorCard = view.findViewById(R.id.engine_selector_card);
+        engineToggleGroup = view.findViewById(R.id.engine_toggle_group);
+        if (selectorCard == null || engineToggleGroup == null) return;
+
+        // Only offer the switch when both engines are usable; with a single engine the
+        // selector is just noise. Availability probes run off-thread (root check spawns su).
         new Thread(() -> {
-            boolean mounted = core.isMounted();
-            EngineStatus es = EngineStatus.current(core, mounted);
-            if (activity == null) return;
-            activity.runOnUiThread(() -> {
-                if (vmBadge == null) return;
-                if (vmRing != null) {
-                    vmRing.setState(mounted ? VmRingView.STATE_READY : VmRingView.STATE_STOPPED);
-                }
-                vmBadge.setText(es.label);
-                try {
-                    vmBadge.setTextColor(androidx.core.content.ContextCompat.getColor(context, es.colorRes));
-                } catch (Exception ignored) {}
-                if (vmSpecs != null) {
-                    vmSpecs.setText(mounted
-                            ? "Debian toolset at " + Core.CHROOT_ROOT
-                            : "Not mounted — reopen the app to remount");
+            final boolean chroot = EngineType.chrootAvailable(core);
+            final boolean vm = core.vmInstalled();
+            Activity host = activity;
+            if (host == null) return;
+            host.runOnUiThread(() -> {
+                if (!isAdded()) return;
+                if (chroot && vm) {
+                    selectorCard.setVisibility(View.VISIBLE);
+                    engineToggleGroup.check(core.isRootless()
+                            ? R.id.btn_engine_vm : R.id.btn_engine_chroot);
+                    engineToggleGroup.addOnButtonCheckedListener((group, checkedId, isChecked) -> {
+                        if (!isChecked) return;
+                        EngineType active = checkedId == R.id.btn_engine_vm
+                                ? EngineType.ROOTLESS : EngineType.CHROOT;
+                        EngineType.persist(core, active);
+                        if (active == EngineType.ROOTLESS) {
+                            RootlessService.start(context);
+                            refreshVmStatus();
+                        } else {
+                            new Thread(() -> {
+                                if (!core.isMounted()) core.mountCore();
+                            }, "stryker-chroot-ondemand").start();
+                        }
+                        core.toaster("Active engine: "
+                                + (active == EngineType.ROOTLESS ? "Rootless VM" : "Chroot (root)"));
+                    });
+                } else {
+                    selectorCard.setVisibility(View.GONE);
                 }
             });
-        }).start();
+        }, "stryker-engine-selector").start();
+    }
+
+    private void setupChrootCard(View view) {
+        chrootCard = view.findViewById(R.id.chroot_card);
+        if (chrootCard == null) return;
+        chrootBadge = view.findViewById(R.id.chroot_status_badge);
+        chrootSpecs = view.findViewById(R.id.chroot_specs_value);
+        chrootMountBtn = view.findViewById(R.id.chroot_btn_mount);
+        if (chrootMountBtn != null) chrootMountBtn.setOnClickListener(v -> toggleChrootMount());
+        refreshChrootCard();
+    }
+
+    @SuppressLint("SetTextI18n")
+    private void refreshChrootCard() {
+        if (chrootCard == null) return;
+        new Thread(() -> {
+            final boolean available = EngineType.chrootAvailable(core);
+            final boolean mounted = available && core.isMounted();
+            Activity host = activity;
+            if (host == null) return;
+            host.runOnUiThread(() -> {
+                if (!isAdded() || chrootCard == null) return;
+                if (!available) {
+                    chrootCard.setVisibility(View.GONE);
+                    return;
+                }
+                chrootCard.setVisibility(View.VISIBLE);
+                if (chrootBadge != null) {
+                    chrootBadge.setText(mounted ? "Mounted" : "Detached");
+                    chrootBadge.setTextColor(androidx.core.content.ContextCompat.getColor(
+                            context, mounted ? R.color.green : R.color.grey));
+                }
+                if (chrootSpecs != null) {
+                    chrootSpecs.setText(mounted
+                            ? "Debian toolset at " + Core.CHROOT_ROOT
+                            : "Not mounted — tap below to attach");
+                }
+                if (chrootMountBtn != null) {
+                    chrootMountBtn.setText(mounted ? "Unmount" : "Mount");
+                    chrootMountBtn.setEnabled(true);
+                }
+            });
+        }, "stryker-chroot-card").start();
+    }
+
+    private void toggleChrootMount() {
+        if (chrootMountBtn != null) chrootMountBtn.setEnabled(false);
+        new Thread(() -> {
+            if (core.isMounted()) core.unmountCore();
+            else core.mountCore();
+            refreshChrootCard();
+        }, "stryker-chroot-toggle").start();
     }
 
     private void hide(View root, int... ids) {

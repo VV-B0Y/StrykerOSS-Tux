@@ -20,6 +20,9 @@ import com.zalexdev.stryker.appintro.AppIntroActivity;
 import com.zalexdev.stryker.engine.EngineType;
 import com.zalexdev.stryker.utils.Core;
 
+import java.util.HashSet;
+import java.util.Set;
+
 public class SlideEngineSelect extends Fragment {
 
     private Activity activity;
@@ -32,7 +35,7 @@ public class SlideEngineSelect extends Fragment {
     private ImageView checkRootless;
     private ImageView checkChroot;
 
-    private EngineType selected = EngineType.CHROOT;
+    private final Set<EngineType> selected = new HashSet<>();
     private boolean rootlessSupported;
 
     @Nullable
@@ -54,39 +57,60 @@ public class SlideEngineSelect extends Fragment {
         rootlessSupported = EngineType.rootlessSupported(context);
 
         if (rootlessSupported) {
-            selected = EngineType.ROOTLESS;
-            cardRootless.setOnClickListener(v -> select(EngineType.ROOTLESS));
+            selected.add(EngineType.ROOTLESS);
+            cardRootless.setOnClickListener(v -> toggle(EngineType.ROOTLESS));
         } else {
             rootlessNote.setVisibility(View.VISIBLE);
             cardRootless.setAlpha(0.5f);
-            selected = EngineType.CHROOT;
         }
-        cardChroot.setOnClickListener(v -> select(EngineType.CHROOT));
+        cardChroot.setOnClickListener(v -> toggle(EngineType.CHROOT));
 
         applySelectionUi();
 
+        // Auto-select the chroot engine when root is available, so a rooted arm64 device
+        // defaults to both engines ticked. Runs off-thread; the user has to click Continue
+        // before this lands (~hundreds of ms) to beat it.
+        new Thread(() -> {
+            boolean rooted = EngineType.rootAvailable(core);
+            uiSafe(() -> {
+                if (rooted && selected.add(EngineType.CHROOT)) {
+                    applySelectionUi();
+                }
+            });
+        }, "stryker-engine-root-check").start();
+
         continueBtn.setOnClickListener(v -> {
-            EngineType.persist(core, selected);
-            ((AppIntroActivity) activity).applyEngineFlow(selected);
+            if (selected.isEmpty()) {
+                core.toaster("Select at least one engine");
+                return;
+            }
+            // Active engine defaults to chroot when it is being installed (root is the
+            // primary runtime); the dashboard runtime selector can flip it later.
+            EngineType active = selected.contains(EngineType.CHROOT)
+                    ? EngineType.CHROOT : EngineType.ROOTLESS;
+            EngineType.persist(core, active);
+            ((AppIntroActivity) activity).applyEngineFlow(new HashSet<>(selected));
             mPager.post(() -> core.moveNext(mPager));
         });
         return view;
     }
 
-    private void select(EngineType type) {
+    private void toggle(EngineType type) {
         if (type == EngineType.ROOTLESS && !rootlessSupported) return;
-        selected = type;
+        if (selected.contains(type)) selected.remove(type);
+        else selected.add(type);
         applySelectionUi();
     }
 
     private void applySelectionUi() {
-        boolean rootless = selected == EngineType.ROOTLESS;
+        boolean rootless = selected.contains(EngineType.ROOTLESS);
+        boolean chroot = selected.contains(EngineType.CHROOT);
         checkRootless.setVisibility(rootless ? View.VISIBLE : View.INVISIBLE);
-        checkChroot.setVisibility(rootless ? View.INVISIBLE : View.VISIBLE);
+        checkChroot.setVisibility(chroot ? View.VISIBLE : View.INVISIBLE);
         int accent = ContextCompat.getColor(context, R.color.stryker_accent);
         int idle = ContextCompat.getColor(context, R.color.light_lite_contrast);
         styleCard(cardRootless, rootless, accent, idle);
-        styleCard(cardChroot, !rootless, accent, idle);
+        styleCard(cardChroot, chroot, accent, idle);
     }
 
     private void styleCard(MaterialCardView card, boolean selectedCard, int accent, int idle) {
@@ -97,5 +121,12 @@ public class SlideEngineSelect extends Fragment {
         card.animate().scaleX(scale).scaleY(scale)
                 .setDuration(getResources().getInteger(R.integer.motion_short))
                 .start();
+    }
+
+    private void uiSafe(Runnable r) {
+        if (activity == null || !isAdded()) return;
+        activity.runOnUiThread(() -> {
+            if (isAdded()) r.run();
+        });
     }
 }
