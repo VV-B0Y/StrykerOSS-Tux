@@ -24,6 +24,8 @@
     <string name="exs">Exploits… </string>
     <string name="usb">USB device connected </string>
     <string name="customvalue">Enter custom value </string>
+    <string name="internal_wifi">Internal WiFi (chroot airodump)</string>
+    <string name="internal_wifi_host">Internal WiFi (host direct)</string>
     <string name="wifi">WiFi Networks </string>
     <string name="dashboard">Home </string>
     <string name="wifi_networks">WiFi Networks </string>
@@ -454,6 +456,7 @@ Storage is only consumed as the guest writes, and space freed inside the VM is r
     <string name="wifi_fab_pixie">Auto Pixie Dust</string>
     <string name="wifi_fab_hs">Mass handshake capture</string>
     <string name="wifi_fab_deauth">Mass deauthentication</string>
+    <string name="wifi_fab_capture">Capture packets (internal)</string>
 
     <string name="nmap_title">Nmap Scanner</string>
     <string name="nmap_subtitle_idle">Probe hosts, fingerprint services, map open ports.</string>

@@ -96,6 +96,14 @@ public class Core {
     public final static String SHELL = "bash";
     public final static String CHROOT_ROOT = "/data/local/stryker/release";
 
+    /** Sentinel interface name meaning "use the phone's internal Wi-Fi chip". In rootless mode
+     *  this routes the scan through the host airodump-ng bridge (HostCaptureBridge); in chroot
+     *  mode it resolves to the internal wlan0. */
+    public final static String WIFI_INTERNAL = "internal";
+    /** Alternative internal-chip path that runs entirely on the host (managed `iw scan` + tcpdump),
+     *  with no chroot dependency — for side-by-side comparison against the airodump bridge. */
+    public final static String WIFI_INTERNAL_HOST = "internal-host";
+
     /** Marker written after a successful chroot install. The name IS the rootfs generation:
      *  "4.0" is the old Alpine tree, "6.0" the Debian one. */
     public final static String CHROOT_MARKER_VERSION = "6.0";

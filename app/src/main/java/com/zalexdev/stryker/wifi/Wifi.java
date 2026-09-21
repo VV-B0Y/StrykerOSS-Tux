@@ -179,6 +179,8 @@ public class Wifi extends Fragment {
             }
         });
         fabOption3.setOnClickListener(v -> runDeauth());
+        FabOption fabOption4 = view.findViewById(R.id.fab_capture);
+        fabOption4.setOnClickListener(v -> runCapture());
         return view;
     }
 
@@ -205,69 +207,88 @@ public class Wifi extends Fragment {
 
         scanThread = new Thread(() -> {
             try {
-                if (core.isRootless()) {
-                    com.zalexdev.stryker.logger.Logger log = new com.zalexdev.stryker.logger.Logger();
-                    log.writeLine("Rootless WiFi: passing USB adapter into the VM…", 1, "wifi");
-                    boolean attached = core.rootless().ensureUsbWifiAttached();
-                    log.writeLine(attached ? "USB adapter attached — driver OK"
-                            : "USB adapter not usable", attached ? 2 : 3, "wifi");
-                    if (!attached) {
-                        boolean noDriver = core.rootless().usb() != null
-                                && core.rootless().usb().hasAttached();
-                        safeUi(noDriver ? this::showNoDriverState : this::showNoAdapterState);
-                        return;
-                    }
-                    boolean up = false;
-                    String target = core.getString("wlan_wifi");
-                    ArrayList<String> ifs = new ArrayList<>();
-                    for (int i = 0; i < 20 && alive.get(); i++) {
-                        ifs = core.getInterfacesList();
-                        if (ifs.contains(target)) { up = true; break; }
-                        if (ifs.contains(target + "mon")) { target = target + "mon"; up = true; break; }
-                        try { Thread.sleep(500); } catch (InterruptedException ignored) {}
-                    }
-                    if (!alive.get()) return;
-                    if (!up && !ifs.isEmpty()) {
-                        target = ifs.get(0);
-                        core.setWifiInterface(target);
-                        wlan = target;
-                        up = true;
-                        final String adopted = target;
-                        log.writeLine("Adopted guest interface '" + adopted + "'", 2, "wifi");
-                        safeUi(() -> {
-                            ifaceValue.setText(adopted);
-                            ifaceMeta.setText(adopted);
-                        });
-                    }
-                    log.writeLine("Guest interfaces: " + ifs, up ? 2 : 3, "wifi");
-                    if (!up) {
-                        log.writeLine("Interface '" + target + "' never appeared — guest USB/driver diagnostics:", 3, "wifi");
-                        core.customChrootCommand("echo '### lsusb'; lsusb 2>&1; "
-                                + "echo '### ip link'; ip -br link 2>&1; "
-                                + "echo '### iw dev'; iw dev 2>&1; "
-                                + "echo '### dmesg'; dmesg 2>&1 | grep -iE 'usb|wlan|firmware|cfg80211|ieee80211|rtl|ath|mt7|88x' | tail -40");
-                        safeUi(this::showNoDriverState);
-                        return;
-                    }
-                    core.rootlessPrepWifi(target);
-                    try { Thread.sleep(1200); } catch (InterruptedException ignored) {}
-                    log.writeLine("Adapter ready — scanning…", 2, "wifi");
-                }
-                ArrayList<String> wlans = core.getInterfacesList();
-                if (wlans.contains(wlan + "mon")) {
-                    wlan = wlan + "mon";
-                }
-                if (wlans.contains(wlan)) {
-                    if (!"wlan0".equals(wlan) && wlan.contains("mon")) {
-                        core.disableMonitorMode(wlan);
-                        wlan = wlan.replace("mon", "");
-                        core.customCommand("ip link set " + wlan + " up");
-                    } else if (!"wlan0".equals(wlan)) {
-                        core.customCommand("ip link set " + wlan + " up");
+                if (Core.WIFI_INTERNAL.equals(wlan) || Core.WIFI_INTERNAL_HOST.equals(wlan)) {
+                    if (core.isRootless()) {
+                        list = scanInternalChipBridge(Core.WIFI_INTERNAL.equals(wlan));
+                    } else {
+                        wlan = "wlan0";
                     }
                 }
 
-                list = new ScanWifi(wlan, core).execute().get();
+                if (list == null) {
+                    if (core.isRootless()) {
+                        com.zalexdev.stryker.logger.Logger log = new com.zalexdev.stryker.logger.Logger();
+                        log.writeLine("Rootless WiFi: passing USB adapter into the VM…", 1, "wifi");
+                        boolean attached = core.rootless().ensureUsbWifiAttached();
+                        log.writeLine(attached ? "USB adapter attached — driver OK"
+                                : "USB adapter not usable", attached ? 2 : 3, "wifi");
+                        if (!attached) {
+                            boolean noDriver = core.rootless().usb() != null
+                                    && core.rootless().usb().hasAttached();
+                            safeUi(noDriver ? this::showNoDriverState : this::showNoAdapterState);
+                            return;
+                        }
+                        boolean up = false;
+                        String target = core.getString("wlan_wifi");
+                        ArrayList<String> ifs = new ArrayList<>();
+                        for (int i = 0; i < 20 && alive.get(); i++) {
+                            ifs = core.getInterfacesList();
+                            if (ifs.contains(target)) { up = true; break; }
+                            if (ifs.contains(target + "mon")) { target = target + "mon"; up = true; break; }
+                            try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+                        }
+                        if (!alive.get()) return;
+                        if (!up && !ifs.isEmpty()) {
+                            target = ifs.get(0);
+                            core.setWifiInterface(target);
+                            wlan = target;
+                            up = true;
+                            final String adopted = target;
+                            log.writeLine("Adopted guest interface '" + adopted + "'", 2, "wifi");
+                            safeUi(() -> {
+                                ifaceValue.setText(adopted);
+                                ifaceMeta.setText(adopted);
+                            });
+                        }
+                        log.writeLine("Guest interfaces: " + ifs, up ? 2 : 3, "wifi");
+                        if (!up) {
+                            log.writeLine("Interface '" + target + "' never appeared — guest USB/driver diagnostics:", 3, "wifi");
+                            core.customChrootCommand("echo '### lsusb'; lsusb 2>&1; "
+                                    + "echo '### ip link'; ip -br link 2>&1; "
+                                    + "echo '### iw dev'; iw dev 2>&1; "
+                                    + "echo '### dmesg'; dmesg 2>&1 | grep -iE 'usb|wlan|firmware|cfg80211|ieee80211|rtl|ath|mt7|88x' | tail -40");
+                            safeUi(this::showNoDriverState);
+                            return;
+                        }
+                        core.rootlessPrepWifi(target);
+                        try { Thread.sleep(1200); } catch (InterruptedException ignored) {}
+                        log.writeLine("Adapter ready — scanning…", 2, "wifi");
+                    }
+                    ArrayList<String> wlans = core.getInterfacesList();
+                    if (wlans.contains(wlan + "mon")) {
+                        wlan = wlan + "mon";
+                    }
+                    if (wlans.contains(wlan)) {
+                        if (!"wlan0".equals(wlan) && wlan.contains("mon")) {
+                            core.disableMonitorMode(wlan);
+                            wlan = wlan.replace("mon", "");
+                            core.customCommand("ip link set " + wlan + " up");
+                        } else if (!"wlan0".equals(wlan)) {
+                            core.customCommand("ip link set " + wlan + " up");
+                        }
+                    }
+
+                    list = new ScanWifi(wlan, core).execute().get();
+                    while (list.isEmpty() && failedscancount < 5) {
+                        if (failedscancount == 4) {
+                            break;
+                        }
+                        failedscancount++;
+                        Thread.sleep(3000);
+                        list = new ScanWifi(wlan, core).execute().get();
+                    }
+                }
+
                 if (mainActivity != null) {
                     mainActivity.setNetworks(list);
                 }
@@ -278,14 +299,6 @@ public class Wifi extends Fragment {
                                     context, n.getMac(), n.getSsid());
                         }
                     }
-                }
-                while (list.isEmpty() && failedscancount < 5) {
-                    if (failedscancount == 4) {
-                        break;
-                    }
-                    failedscancount++;
-                    Thread.sleep(3000);
-                    list = new ScanWifi(wlan, core).execute().get();
                 }
 
                 for (int i = 0; i < list.size(); i++) {
@@ -356,6 +369,69 @@ public class Wifi extends Fragment {
             }
         });
         scanThread.start();
+    }
+
+    /** Internal-chip scan: chroot airodump-ng (passive) or host-direct `iw scan` (managed). */
+    private ArrayList<WiFINetwork> scanInternalChipBridge(boolean useChrootAirodump) {
+        com.zalexdev.stryker.logger.Logger log = new com.zalexdev.stryker.logger.Logger();
+        com.zalexdev.stryker.engine.HostCaptureBridge bridge = new com.zalexdev.stryker.engine.HostCaptureBridge(core);
+        if (useChrootAirodump) {
+            log.writeLine("Internal chip: passive capture via chroot airodump-ng…", 1, "wifi");
+            try {
+                bridge.start();
+                String csv = core.getShareRoot() + "/captured/bridge/cap-01.csv";
+                for (int i = 0; i < 24 && alive.get(); i++) {
+                    java.io.File f = new java.io.File(csv);
+                    if (f.exists() && f.length() > 0) break;
+                    try { Thread.sleep(500); } catch (InterruptedException ignored) {}
+                }
+                ArrayList<WiFINetwork> nets = parseAirodumpCsv(csv);
+                if (nets == null) nets = new ArrayList<>();
+                log.writeLine("Internal chip (airodump) scan: " + nets.size() + " networks", 2, "wifi");
+                return nets;
+            } finally {
+                bridge.stop();
+            }
+        }
+        log.writeLine("Internal chip: host-direct managed scan…", 1, "wifi");
+        ArrayList<String> out = bridge.hostScan();
+        ScanWifi parser = new ScanWifi("wlan0", core);
+        ArrayList<WiFINetwork> nets = parser.parsewifi(out);
+        if (nets.isEmpty()) nets = parser.parseWifiLenient(out);
+        log.writeLine("Internal chip (host) scan: " + nets.size() + " networks", 2, "wifi");
+        return nets;
+    }
+
+    /** Parse an airodump-ng --output-format csv AP list into WiFINetwork entries. */
+    private ArrayList<WiFINetwork> parseAirodumpCsv(String path) {
+        ArrayList<WiFINetwork> nets = new ArrayList<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(path))) {
+            String line;
+            boolean inApSection = false;
+            while ((line = br.readLine()) != null) {
+                String t = line.trim();
+                if (t.startsWith("BSSID")) { inApSection = true; continue; }
+                if (t.startsWith("Station MAC")) break;
+                if (!inApSection || t.isEmpty()) continue;
+                String[] c = line.split(",");
+                if (c.length < 14) continue;
+                String bssid = c[0].trim();
+                if (bssid.isEmpty() || !bssid.matches("([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")) continue;
+                WiFINetwork w = new WiFINetwork();
+                w.setMac(bssid);
+                String vendor = core.getVendorByMacFromDB(bssid);
+                w.setVendor(vendor == null || vendor.isEmpty() ? "Unknown" : vendor);
+                try { w.setChannel(Integer.parseInt(c[3].trim())); } catch (Exception ignored) {}
+                try { w.setPower(Integer.parseInt(c[8].trim())); } catch (Exception ignored) {}
+                String ssid = c[13].trim();
+                w.setSsid(ssid.isEmpty() ? "Hidden network" : ssid);
+                if (w.getChannel() > 14) w.setIs5hhz(true);
+                nets.add(w);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return nets;
     }
 
     private void renderListState(boolean hasNetworks) {
@@ -442,16 +518,31 @@ public class Wifi extends Fragment {
 
     private void showWifiInterfacePicker(ArrayList<String> interfaces) {
         if (context == null || activity == null) return;
-        String[] items = new String[interfaces.size() + 1];
-        for (int i = 0; i < interfaces.size(); i++) {
-            items[i] = interfaces.get(i);
+        final boolean rootless = core.isRootless();
+        int extra = rootless ? 3 : 1;
+        String[] items = new String[interfaces.size() + extra];
+        int idx = 0;
+        int internalPos = -1;
+        int internalHostPos = -1;
+        if (rootless) {
+            items[idx++] = context.getString(R.string.internal_wifi);
+            internalPos = 0;
+            items[idx++] = context.getString(R.string.internal_wifi_host);
+            internalHostPos = 1;
         }
-        items[items.length - 1] = context.getString(R.string.customvalue);
+        for (String iface : interfaces) items[idx++] = iface;
+        items[idx] = context.getString(R.string.customvalue);
+        final int iPos = internalPos;
+        final int ihPos = internalHostPos;
         new MaterialAlertDialogBuilder(context)
                 .setTitle(R.string.pick)
                 .setItems(items, (di, i) -> {
                     if (i == items.length - 1) {
                         promptCustomWifiInterface();
+                    } else if (i == iPos) {
+                        applyWifiInterface(Core.WIFI_INTERNAL);
+                    } else if (i == ihPos) {
+                        applyWifiInterface(Core.WIFI_INTERNAL_HOST);
                     } else {
                         applyWifiInterface(items[i]);
                     }
@@ -486,7 +577,11 @@ public class Wifi extends Fragment {
     }
 
     private void applyWifiInterface(String iface) {
-        core.setWifiInterface(iface);
+        if (Core.WIFI_INTERNAL.equals(iface) || Core.WIFI_INTERNAL_HOST.equals(iface)) {
+            core.putString("wlan_wifi", iface);
+        } else {
+            core.setWifiInterface(iface);
+        }
         wlan = iface;
         ifaceValue.setText(iface);
         ifaceMeta.setText(iface);
@@ -1076,6 +1171,69 @@ public class Wifi extends Fragment {
             resulttext.setVisibility(View.VISIBLE);
             resulttext.setText("Attack stopped");
         });
+        dialog.show();
+    }
+
+    /** Capture raw packets on the internal chip (bridge) and save to a .cap/.pcap file. */
+    public void runCapture() {
+        if (context == null) return;
+        if (!Core.WIFI_INTERNAL.equals(wlan) && !Core.WIFI_INTERNAL_HOST.equals(wlan)) {
+            core.toaster("Select the internal WiFi interface first");
+            return;
+        }
+        final boolean useAirodump = Core.WIFI_INTERNAL.equals(wlan);
+        final com.zalexdev.stryker.engine.HostCaptureBridge bridge =
+                new com.zalexdev.stryker.engine.HostCaptureBridge(core);
+        final Dialog dialog = new Dialog(context);
+        dialog.setContentView(R.layout.wifi_dialog_hs);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        }
+        dialog.setCancelable(false);
+        TextView outputtext = dialog.findViewById(R.id.wifi_output);
+        TextView resulttext = dialog.findViewById(R.id.wifi_result);
+        MaterialButton stop = dialog.findViewById(R.id.stop);
+        TextView title = dialog.findViewById(R.id.scan_text);
+        if (title != null) title.setText("Capturing packets");
+        MaterialCardView info = dialog.findViewById(R.id.info_card);
+        if (info != null) info.setVisibility(View.GONE);
+        outputtext.setMovementMethod(new ScrollingMovementMethod());
+        outputtext.setText("Starting capture on internal chip...\n");
+        new Thread(() -> {
+            boolean ok = useAirodump ? bridge.start() : bridge.startHostCapture();
+            safeUi(() -> outputtext.append(ok ? "Capturing... tap Stop to save.\n" : "Failed to start capture.\n"));
+        }).start();
+
+        stop.setOnClickListener(v -> new Thread(() -> {
+            bridge.stop();
+            String bridgeDir = core.getShareRoot() + "/captured/bridge";
+            java.io.File src = null;
+            java.io.File[] caps = new java.io.File(bridgeDir)
+                    .listFiles((d, n) -> n.endsWith(".cap") || n.endsWith(".pcap"));
+            if (caps != null) {
+                for (java.io.File f : caps) {
+                    if (f.length() > 0 && (src == null || f.lastModified() > src.lastModified())) src = f;
+                }
+            }
+            String strDate = new SimpleDateFormat("dd-MM_HH-mm", Locale.ENGLISH).format(new Date());
+            String dest = core.getShareRoot() + "/captured/Internal_" + strDate + ".cap";
+            boolean saved = false;
+            if (src != null) {
+                new java.io.File(core.getShareRoot() + "/captured").mkdirs();
+                core.moveFile(src.getAbsolutePath(), dest);
+                saved = new java.io.File(dest).isFile();
+            }
+            final boolean ok = saved;
+            safeUi(() -> {
+                stop.setVisibility(View.GONE);
+                dialog.setCancelable(true);
+                outputtext.setVisibility(View.GONE);
+                resulttext.setVisibility(View.VISIBLE);
+                resulttext.setText(ok ? "Saved to:\n" + dest : "No packets captured.");
+            });
+        }).start());
         dialog.show();
     }
 

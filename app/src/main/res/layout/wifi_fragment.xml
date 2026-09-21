@@ -435,4 +435,12 @@
         app:fab_icon="@drawable/deauth"
         app:fab_orientation="portrait"
         app:label_text="@string/wifi_fab_deauth" />
+
+    <com.nambimobile.widgets.efab.FabOption
+        android:id="@+id/fab_capture"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:fab_icon="@drawable/download"
+        app:fab_orientation="portrait"
+        app:label_text="@string/wifi_fab_capture" />
 </com.nambimobile.widgets.efab.ExpandableFabLayout>

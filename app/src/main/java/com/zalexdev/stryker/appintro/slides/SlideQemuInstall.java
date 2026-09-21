@@ -183,7 +183,7 @@ public class SlideQemuInstall extends Fragment {
     }
 
     private void seedDefaults() {
-        if (core.getString("wlan_wifi").isEmpty())   core.putString("wlan_wifi", "wlan0");
+        if (core.getString("wlan_wifi").isEmpty())   core.putString("wlan_wifi", Core.WIFI_INTERNAL);
         if (core.getString("wlan_scan").isEmpty())   core.putString("wlan_scan", "wlan0");
         if (core.getString("wlan_deauth").isEmpty()) core.putString("wlan_deauth", "wlan0");
         if (core.getString("wlan_wps").isEmpty())    core.putString("wlan_wps", "wlan0");

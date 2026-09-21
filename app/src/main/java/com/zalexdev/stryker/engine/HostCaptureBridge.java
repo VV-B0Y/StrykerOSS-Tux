@@ -2,6 +2,8 @@ package com.zalexdev.stryker.engine;
 
 import com.zalexdev.stryker.utils.Core;
 
+import java.util.ArrayList;
+
 /**
  * HostCaptureBridge: exposes the host's internal-chip passive capture to the rootless VM.
  *
@@ -63,7 +65,7 @@ public class HostCaptureBridge {
         String capture = "if chroot " + CHROOT
                 + " /bin/sh -c 'test -x /sbin/airodump-ng -o -x /usr/sbin/airodump-ng' >/dev/null 2>&1; then "
                 + "chroot " + CHROOT + " /bin/sh -c 'export PATH=/usr/sbin:/usr/bin:/sbin:/bin; "
-                + "nohup airodump-ng wlan0 --write " + CHROOT_DIR + "/cap --output-format pcap,csv --update 1 "
+                + "nohup airodump-ng wlan0 --band abg --write " + CHROOT_DIR + "/cap --output-format pcap,csv --update 1 "
                 + ">/dev/null 2>&1 &'; "
                 + "else "
                 + "nohup /system/bin/tcpdump -i wlan0 -w " + RAW_DIR + "/cap.pcap -U >/dev/null 2>&1 &; "
@@ -80,5 +82,33 @@ public class HostCaptureBridge {
         core.customCommand("killall airodump-ng 2>/dev/null; killall tcpdump 2>/dev/null; true", true);
         core.customCommand("umount " + CHROOT + CHROOT_DIR + " 2>/dev/null; true", true);
         core.customCommand(CON_MODE_0 + "; svc wifi enable", true);
+    }
+
+    /** True when the chroot has airodump-ng (passive capture with parsed AP list is available). */
+    public boolean hasAirodump() {
+        ArrayList<String> out = core.customCommand(
+                "chroot " + CHROOT + " /bin/sh -c 'test -x /sbin/airodump-ng -o -x /usr/sbin/airodump-ng' "
+                        + "&& echo yes || echo no", true);
+        return !out.isEmpty() && out.get(0).trim().equals("yes");
+    }
+
+    /** Host-direct managed scan (no monitor mode, no chroot): returns `iw dev wlan0 scan` output. */
+    public ArrayList<String> hostScan() {
+        return core.customCommand("iw dev wlan0 scan 2>&1", true);
+    }
+
+    /** Host-direct packet capture (monitor mode + tcpdump), no chroot dependency. */
+    public boolean startHostCapture() {
+        if (running) return true;
+        core.customCommand("svc wifi disable; " + CON_MODE_4 + "; ip link set wlan0 up", true);
+        core.customCommand("mkdir -p " + RAW_DIR + "; rm -f " + RAW_DIR + "/*", true);
+        core.customCommand("nohup /system/bin/tcpdump -i wlan0 -w " + RAW_DIR + "/cap.pcap -U >/dev/null 2>&1 &", true);
+        running = true;
+        return true;
+    }
+
+    /** The .cap/.pcap file the capture landed in (raw host path). */
+    public String captureFileRaw() {
+        return RAW_DIR + "/cap-01.cap";
     }
 }
