@@ -942,13 +942,25 @@ public class Wifi extends Fragment {
                     @Override
                     public void run() {
                         List<List<String>> records = new ArrayList<>();
-                        try (BufferedReader br = new BufferedReader(new FileReader(hsDir + "/handshakenow-01.csv"))) {
-                            String line;
-                            while ((line = br.readLine()) != null) {
-                                String[] values = line.split(",");
-                                records.add(Arrays.asList(values));
+                        try {
+                            if (core.isRootless()) {
+                                // The 9p share can be off (safe profile) — read the CSV straight from the guest.
+                                ArrayList<String> rawLines = core.customChrootCommand(
+                                        "cat /sdcard/Stryker/hs/handshakenow-01.csv 2>/dev/null");
+                                for (String raw : rawLines) {
+                                    String[] values = raw.replace("\r", "").split(",");
+                                    records.add(Arrays.asList(values));
+                                }
+                            } else {
+                                try (BufferedReader br = new BufferedReader(new FileReader(hsDir + "/handshakenow-01.csv"))) {
+                                    String line;
+                                    while ((line = br.readLine()) != null) {
+                                        String[] values = line.split(",");
+                                        records.add(Arrays.asList(values));
+                                    }
+                                }
                             }
-                        } catch (IOException e) {
+                        } catch (Exception e) {
                             e.printStackTrace();
                         }
                         for (List<String> line : records) {
