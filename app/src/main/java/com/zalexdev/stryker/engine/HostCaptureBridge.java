@@ -79,7 +79,7 @@ public class HostCaptureBridge {
             String capture = "if [ -x " + CHROOT + "/sbin/airodump-ng ]; then "
                     + "nohup chroot " + CHROOT + " /sbin/airodump-ng wlan0 --band abg --write " + CHROOT_DIR
                     + "/cap --output-format pcap,csv --update 1 >/dev/null 2>&1 & echo $! > " + PID_FILE
-                    + " else nohup /system/bin/tcpdump -i wlan0 -w " + rawDir + "/cap.pcap -U >/dev/null 2>&1 & echo $! > " + PID_FILE + " fi";
+                    + "; else nohup /system/bin/tcpdump -i wlan0 -w " + rawDir + "/cap.pcap -U >/dev/null 2>&1 & echo $! > " + PID_FILE + "; fi";
             core.customCommandSuC(capture);
         } else {
             // Chroot mode: write through the chroot's /sdcard FUSE mount (public storage) — no
