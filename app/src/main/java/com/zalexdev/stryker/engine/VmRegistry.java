@@ -172,25 +172,32 @@ public final class VmRegistry {
             java.io.FileDescriptor fd = in.getFD();
             byte[] buf = new byte[1 << 20];
             long pos = 0;
-            try {
-                while (pos < size) {
-                    long data = android.system.Os.lseek(fd, pos, 3); // SEEK_DATA
-                    if (data < 0 || data >= size) break;
-                    long hole = android.system.Os.lseek(fd, data, 4); // SEEK_HOLE
-                    if (hole < 0 || hole > size) hole = size;
-                    in.seek(data);
-                    out.seek(data);
-                    long remain = hole - data;
-                    while (remain > 0) {
-                        int n = in.read(buf, 0, (int) Math.min(buf.length, remain));
-                        if (n < 0) break;
-                        out.write(buf, 0, n);
-                        remain -= n;
-                    }
-                    pos = hole;
+            while (pos < size) {
+                long data;
+                try {
+                    data = android.system.Os.lseek(fd, pos, 3); // SEEK_DATA
+                } catch (android.system.ErrnoException e) {
+                    if (e.errno == 6) break; // ENXIO: no data extent at/after pos — copy complete
+                    throw new IOException("sparse copy failed: " + e.getMessage(), e);
                 }
-            } catch (android.system.ErrnoException e) {
-                throw new IOException("sparse copy failed: " + e.getMessage(), e);
+                if (data >= size) break;
+                long hole;
+                try {
+                    hole = android.system.Os.lseek(fd, data, 4); // SEEK_HOLE
+                } catch (android.system.ErrnoException e) {
+                    throw new IOException("sparse copy failed: " + e.getMessage(), e);
+                }
+                if (hole > size) hole = size;
+                in.seek(data);
+                out.seek(data);
+                long remain = hole - data;
+                while (remain > 0) {
+                    int n = in.read(buf, 0, (int) Math.min(buf.length, remain));
+                    if (n < 0) break;
+                    out.write(buf, 0, n);
+                    remain -= n;
+                }
+                pos = hole;
             }
             out.setLength(size);
         }
