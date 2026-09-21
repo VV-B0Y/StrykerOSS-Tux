@@ -70,7 +70,8 @@ public final class GuestExec {
         return "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin${PATH:+:$PATH}; "
                 + "export HOME=/root LANG=C.UTF-8; "
                 + command
-                + "\nprintf '\\n" + EXIT_SENTINEL + "%s\\n' \"$?\"\n";
+                + "\nprintf '\\n" + EXIT_SENTINEL + "%s\\n' \"$?\"\n"
+                + "exit\n";
     }
 
     private static String wrapJob(String command, String jobId) {
@@ -87,7 +88,8 @@ public final class GuestExec {
                 + "__stryker_job=$!\n"
                 + "wait $__stryker_job\n"
                 + "printf '\\n" + EXIT_SENTINEL + "%s\\n' \"$?\"\n"
-                + "rm -f " + script + " " + pidFile + "\n";
+                + "rm -f " + script + " " + pidFile + "\n"
+                + "exit\n";
     }
 
     private void killJob(String jobId) {
