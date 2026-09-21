@@ -127,10 +127,10 @@ isolated from everything except the host-forwarded ports. Bridged mode is the he
    dashboard); VNC/terminal address a selected VM.
 6. **Shared (bridged) networking** — tap + bridge setup, per-VM "shared" mode toggle.
 
-## Open decisions (need sign-off)
+## Decisions (locked)
 
-1. Bridged ("shared") networking in this first pass, or start independent-only and add shared
-   mode next? (lean: independent-only first, shared mode next)
-2. VM naming: free-text (default "VM 1"/"VM 2") vs fixed ids only?
-3. New/cloned VM disk size: inherit source size, or configurable at creation?
-4. Default RAM/CPU for a second VM: half the autotuned value, or explicit per-VM default?
+1. Bridged ("shared") networking: **independent-only first**, shared mode next (Phase 6).
+2. VM naming: **free-text**, default "VM 1"/"VM 2"; stable internal id stays `vm0`/`vm1`.
+3. Disk size: **custom value allowed when creating a VM not from the Stryker template**
+   (clone / imported image); a Stryker-template VM uses the template's default size.
+4. Second VM RAM/CPU: **half the autotuned value**.
