@@ -384,6 +384,9 @@ public class MainActivity extends AppCompatActivity {
                         com.zalexdev.stryker.engine.EngineType chosen = types.get(position);
                         if (chosen == com.zalexdev.stryker.engine.EngineType.active(core)) return;
                         com.zalexdev.stryker.engine.EngineType.persist(core, chosen);
+                        // Clean up any capture the previous engine left running before we switch.
+                        new Thread(() -> com.zalexdev.stryker.engine.HostCaptureBridge.ensureManaged(core),
+                                "stryker-radio-reset").start();
                         updateBanner(true, chosen == com.zalexdev.stryker.engine.EngineType.ROOTLESS);
                         if (chosen == com.zalexdev.stryker.engine.EngineType.ROOTLESS) {
                             com.zalexdev.stryker.engine.RootlessService.start(getApplicationContext());

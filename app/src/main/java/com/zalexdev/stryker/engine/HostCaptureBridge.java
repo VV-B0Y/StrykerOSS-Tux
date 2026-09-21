@@ -39,6 +39,9 @@ public class HostCaptureBridge {
 
     private static final String CHROOT = "/data/local/stryker/release";
 
+    /** Host file that records the PID of the capture process we launched, so cleanup kills only ours. */
+    public static final String PID_FILE = "/data/local/tmp/stryker_bridge.pid";
+
     private final Core core;
     private volatile boolean running = false;
 
@@ -75,8 +78,8 @@ public class HostCaptureBridge {
             // 3. Capture: airodump-ng (parsed CSV + pcap) inside the chroot, tcpdump (pcap) as fallback.
             String capture = "if [ -x " + CHROOT + "/sbin/airodump-ng ]; then "
                     + "nohup chroot " + CHROOT + " /sbin/airodump-ng wlan0 --band abg --write " + CHROOT_DIR
-                    + "/cap --output-format pcap,csv --update 1 >/dev/null 2>&1 & "
-                    + "else nohup /system/bin/tcpdump -i wlan0 -w " + rawDir + "/cap.pcap -U >/dev/null 2>&1 & fi";
+                    + "/cap --output-format pcap,csv --update 1 >/dev/null 2>&1 & echo $! > " + PID_FILE
+                    + " else nohup /system/bin/tcpdump -i wlan0 -w " + rawDir + "/cap.pcap -U >/dev/null 2>&1 & echo $! > " + PID_FILE + " fi";
             core.customCommandSuC(capture);
         } else {
             // Chroot mode: write through the chroot's /sdcard FUSE mount (public storage) — no
@@ -84,7 +87,7 @@ public class HostCaptureBridge {
             core.customChrootCommand("mkdir -p /sdcard/Stryker/captured/bridge; rm -f /sdcard/Stryker/captured/bridge/*");
             core.customCommandSuC("nohup chroot " + CHROOT + " /sbin/airodump-ng wlan0 --band abg "
                     + "--write /sdcard/Stryker/captured/bridge/cap --output-format pcap,csv --update 1 "
-                    + ">/dev/null 2>&1 &");
+                    + ">/dev/null 2>&1 & echo $! > " + PID_FILE);
         }
 
         running = true;
@@ -93,12 +96,62 @@ public class HostCaptureBridge {
 
     /** Stop capturing, tear down the bind-mount (rootless), and restore normal Wi-Fi. */
     public void stop() {
+        cleanup();
+    }
+
+    /**
+     * Idempotent full cleanup: kill only OUR capture process (by PID, plus a targeted pkill
+     * fallback that matches our --write path — never a foreign airodump like the Kali chroot's),
+     * tear down the bind-mount, and restore the radio to managed mode.
+     */
+    public void cleanup() {
         running = false;
-        core.customCommandSuC("killall airodump-ng 2>/dev/null; killall tcpdump 2>/dev/null; true");
+        core.customCommandSuC(
+                "p=$(cat " + PID_FILE + " 2>/dev/null); "
+                + "[ -n \"$p\" ] && kill $p 2>/dev/null; "
+                + "sleep 1; "
+                + "[ -n \"$p\" ] && kill -9 $p 2>/dev/null; "
+                + "pkill -f 'airodump-ng.*bridge/cap' 2>/dev/null; "
+                + "pkill -f 'tcpdump.*bridge' 2>/dev/null; "
+                + "rm -f " + PID_FILE + "; true");
         if (core.isRootless()) {
             core.customCommandSuC("umount " + CHROOT + CHROOT_DIR + " 2>/dev/null; true");
         }
-        core.customCommandSuC(CON_MODE_0 + "; svc wifi enable");
+        core.customCommandSuC(CON_MODE_0 + "; svc wifi enable; true");
+    }
+
+    /** True when the internal chip is in managed mode (con_mode == 0), i.e. scans will work. */
+    public boolean radioManaged() {
+        ArrayList<String> out = core.customCommandSuC(
+                "cat /sys/module/kiwi_v2/parameters/con_mode 2>/dev/null");
+        return !out.isEmpty() && "0".equals(out.get(0).trim());
+    }
+
+    /** PIDs of any capture processes still running (airodump-ng / tcpdump). */
+    public ArrayList<String> runawayPids() {
+        ArrayList<String> out = core.customCommandSuC(
+                "pgrep -l airodump-ng 2>/dev/null; pgrep -l tcpdump 2>/dev/null; true");
+        ArrayList<String> pids = new ArrayList<>();
+        for (String l : out) {
+            if (l != null && (l.contains("airodump-ng") || l.contains("tcpdump"))) pids.add(l.trim());
+        }
+        return pids;
+    }
+
+    /**
+     * Restore a healthy radio state if a prior capture left it dirty. "Dirty" means the chip is
+     * still in monitor mode OR our recorded PID is still alive — so a foreign capture (Kali chroot)
+     * is never disturbed. Safe to call any time; used as a scan self-heal and on app start.
+     */
+    public static void ensureManaged(Core core) {
+        ArrayList<String> out = core.customCommandSuC(
+                "c=$(cat /sys/module/kiwi_v2/parameters/con_mode 2>/dev/null); "
+                + "p=$(cat " + PID_FILE + " 2>/dev/null); "
+                + "alive=0; [ -n \"$p\" ] && kill -0 $p 2>/dev/null && alive=1; "
+                + "if { [ -n \"$c\" ] && [ \"$c\" != \"0\" ]; } || [ \"$alive\" = \"1\" ]; "
+                + "then echo DIRTY; else echo CLEAN; fi");
+        boolean dirty = !out.isEmpty() && out.get(0).trim().equals("DIRTY");
+        if (dirty) new HostCaptureBridge(core).cleanup();
     }
 
     /** Move the finished capture into the app-visible captured/ dir. Returns true on success. */
@@ -132,7 +185,7 @@ public class HostCaptureBridge {
         if (running) return true;
         core.customCommandSuC("svc wifi disable; " + CON_MODE_4 + "; ip link set wlan0 up");
         core.customCommandSuC("mkdir -p " + rawDir + "; rm -f " + rawDir + "/*");
-        core.customCommandSuC("nohup /system/bin/tcpdump -i wlan0 -w " + rawDir + "/cap.pcap -U >/dev/null 2>&1 &");
+        core.customCommandSuC("nohup /system/bin/tcpdump -i wlan0 -w " + rawDir + "/cap.pcap -U >/dev/null 2>&1 & echo $! > " + PID_FILE);
         running = true;
         return true;
     }
