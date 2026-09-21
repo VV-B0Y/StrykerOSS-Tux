@@ -209,6 +209,8 @@ public class Wifi extends Fragment {
             try {
                 // Self-heal: if a prior capture left the internal chip in monitor mode or a runaway
                 // capture process alive, restore a clean radio state before scanning.
+                com.zalexdev.stryker.logger.Logger scanLog = new com.zalexdev.stryker.logger.Logger();
+                scanLog.writeLine("scan(): mode=" + (core.isRootless() ? "rootless" : "chroot") + " wlan=" + wlan, 1, "wifi");
                 com.zalexdev.stryker.engine.HostCaptureBridge.ensureManaged(core);
                 if (Core.WIFI_INTERNAL.equals(wlan) || Core.WIFI_INTERNAL_HOST.equals(wlan)) {
                     if (core.isRootless()) {
@@ -386,7 +388,7 @@ public class Wifi extends Fragment {
         com.zalexdev.stryker.logger.Logger log = new com.zalexdev.stryker.logger.Logger();
         com.zalexdev.stryker.engine.HostCaptureBridge bridge = new com.zalexdev.stryker.engine.HostCaptureBridge(core);
         if (useChrootAirodump) {
-            log.writeLine("Internal chip: passive capture via chroot airodump-ng…", 1, "wifi");
+            log.writeLine("Internal chip [" + (core.isRootless() ? "rootless" : "chroot") + "]: passive capture via airodump-ng…", 1, "wifi");
             try {
                 bridge.start();
                 String csvPath = bridge.rawDir + "/cap-01.csv";
@@ -395,6 +397,7 @@ public class Wifi extends Fragment {
                 for (int i = 0; i < 24 && alive.get(); i++) {
                     csvLines = core.customCommandSuC("cat " + csvPath + " 2>/dev/null");
                     nets = parseAirodumpCsv(csvLines);
+                    log.writeLine("airodump scan iter " + i + ": csv lines=" + csvLines.size() + " parsed=" + nets.size(), 2, "wifi");
                     // Break only once airodump has captured real AP rows — a freshly created CSV
                     // is just the header line (0 APs), which would otherwise end the scan early.
                     if (!nets.isEmpty()) break;

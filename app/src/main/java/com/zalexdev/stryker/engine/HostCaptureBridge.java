@@ -66,9 +66,14 @@ public class HostCaptureBridge {
     /** Enable internal-chip monitor mode and start capturing into the share. */
     public boolean start() {
         if (running) return true;
+        com.zalexdev.stryker.logger.Logger log = new com.zalexdev.stryker.logger.Logger();
+        String mode = core.isRootless() ? "rootless" : "chroot";
+        log.writeLine("bridge.start [" + mode + "]: enabling monitor mode…", 1, "wifi");
 
         // 1. Enable monitor mode on the internal radio.
         core.customCommandSuC("svc wifi disable; " + CON_MODE_4 + "; ip link set wlan0 up");
+        ArrayList<String> cm = core.customCommandSuC("cat /sys/module/kiwi_v2/parameters/con_mode 2>/dev/null");
+        log.writeLine("bridge.start [" + mode + "]: con_mode=" + (cm.isEmpty() ? "?" : cm.get(0).trim()) + " (want 4)", 2, "wifi");
 
         if (core.isRootless()) {
             // 2. Prepare the share dir and bind-mount it into the chroot.
@@ -89,6 +94,11 @@ public class HostCaptureBridge {
                     + "--write /sdcard/Stryker/captured/bridge/cap --output-format pcap,csv --update 1 "
                     + ">/dev/null 2>&1 & echo $! > " + PID_FILE);
         }
+
+        ArrayList<String> pid = core.customCommandSuC("cat " + PID_FILE + " 2>/dev/null");
+        ArrayList<String> alive = core.customCommandSuC("pgrep -c airodump-ng 2>/dev/null");
+        log.writeLine("bridge.start [" + mode + "]: airodump PID=" + (pid.isEmpty() ? "?" : pid.get(0).trim())
+                + " running=" + (alive.isEmpty() ? "0" : alive.get(0).trim()), 2, "wifi");
 
         running = true;
         return true;
