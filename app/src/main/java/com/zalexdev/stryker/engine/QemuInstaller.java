@@ -276,6 +276,98 @@ public final class QemuInstaller {
         }
     }
 
+    /**
+     * Installs only the rootfs disk into a named VM slot — used to provision a NEW VM from the
+     * Stryker template. The shared artifacts (qemu/kernel/initrd/libslirp) are assumed already
+     * installed; this just populates {@code vms/<id>/rootfs.img}.
+     */
+    public static boolean installRootfsForVm(Context context, String vmId, Progress p) {
+        File vmDir = RootlessPaths.vmDir(context, vmId);
+        try {
+            stage(p, Stage.PREPARING);
+            if (!vmDir.exists() && !vmDir.mkdirs()) {
+                log(p, 3, "Cannot create " + vmDir.getAbsolutePath());
+                return false;
+            }
+            File rootfs = RootlessPaths.rootfs(context, vmId);
+
+            stage(p, Stage.DECOMPRESSING_ROOTFS);
+            if (assetsPresent(context)) {
+                AssetManager am = context.getAssets();
+                String rootfsAsset = rootfsAssetName(context);
+                if (rootfsAsset == null) {
+                    log(p, 3, "rootfs asset not found in assets/rootless");
+                    return false;
+                }
+                if (isCompressed(rootfsAsset)) {
+                    log(p, 1, "Decompressing " + rootfsAsset + " (this can take a minute)");
+                    gunzipAsset(am, ASSET_DIR + "/" + rootfsAsset, rootfs, p);
+                } else {
+                    log(p, 1, "Copying " + rootfsAsset + " (already decompressed by the build)");
+                    copyAsset(am, ASSET_DIR + "/" + rootfsAsset, rootfs, p, "rootfs.img");
+                }
+            } else {
+                QemuDownloader.Bundle b = QemuDownloader.resolve(context);
+                boolean compressed = b.rootfs != null && b.rootfs.url != null
+                        && (b.rootfs.url.endsWith(".imgz") || b.rootfs.url.endsWith(".gz"));
+                if (!compressed) {
+                    if (!fetch(b.rootfs, rootfs, "rootfs.img", p)) return false;
+                } else {
+                    File archive = new File(vmDir, "rootfs.download");
+                    if (!fetch(b.rootfs, archive, "rootfs", p)) return false;
+                    log(p, 1, "Decompressing rootfs (this can take a minute)");
+                    if (!gunzipFile(archive, rootfs, p)) {
+                        //noinspection ResultOfMethodCallIgnored
+                        archive.delete();
+                        return false;
+                    }
+                    //noinspection ResultOfMethodCallIgnored
+                    archive.delete();
+                }
+            }
+
+            stage(p, Stage.FINALIZING);
+            ensureMinimumDiskFor(context, vmId, p);
+
+            boolean ok = rootfs.exists() && rootfs.length() > 0;
+            if (ok) {
+                stage(p, Stage.DONE);
+                log(p, 2, "VM disk ready");
+            } else {
+                log(p, 3, "Post-install verification failed for " + vmId);
+            }
+            return ok;
+        } catch (Exception e) {
+            Log.e(TAG, "vm rootfs install failed", e);
+            log(p, 3, "Install error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static void ensureMinimumDiskFor(Context context, String vmId, Progress p) {
+        try {
+            File img = RootlessPaths.rootfs(context, vmId);
+            if (!img.exists()) return;
+            long target = Math.min((long) VmSpecs.MIN_DISK_GB * VmSpecs.GB,
+                    VmSpecs.autoDiskTargetBytes(context));
+            if (img.length() >= target) return;
+            try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(img, "rw")) {
+                raf.setLength(target);
+                raf.getFD().sync();
+            }
+            if (img.length() < target) {
+                log(p, 3, "Could not reserve " + (target / VmSpecs.GB) + " GB for the VM disk");
+                return;
+            }
+            com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(context);
+            core.putBoolean(VmSpecs.K_RESIZE_PENDING, true);
+            log(p, 2, "VM disk starts at " + (target / VmSpecs.GB)
+                    + " GB and grows into free storage automatically");
+        } catch (Exception e) {
+            log(p, 3, "Disk sizing skipped: " + e.getMessage());
+        }
+    }
+
     private static void copyAsset(AssetManager am, String assetPath, File dest, Progress p, String label)
             throws IOException {
         File tmp = new File(dest.getAbsolutePath() + ".tmp");
