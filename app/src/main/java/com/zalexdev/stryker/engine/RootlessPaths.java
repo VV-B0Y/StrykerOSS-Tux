@@ -38,6 +38,9 @@ public final class RootlessPaths {
     public static final int GUEST_SSH_PORT = 22;
     public static final int HOST_SSH_PORT  = 2222;
 
+    public static final int GUEST_CAPTURE_PORT = 1053;
+    public static final int HOST_CAPTURE_PORT  = 1053;
+
     public static File activeFlag(Context c) {
         return new File(base(c), ".active");
     }

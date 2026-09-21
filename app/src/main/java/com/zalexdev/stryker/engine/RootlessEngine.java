@@ -621,7 +621,7 @@ public final class RootlessEngine {
      */
     private static String unpackAndVerify(String tarPath) {
         return "tar xf " + tarPath + " -C / 2>&1; "
-                + "chmod 0755 /usr/local/sbin/stryker-ptyd /usr/local/sbin/stryker-agentd 2>/dev/null; "
+                + "chmod 0755 /usr/local/sbin/stryker-ptyd /usr/local/sbin/stryker-agentd /usr/local/sbin/stryker-capture-relay 2>/dev/null; "
                 + "echo __AGENT_BYTES__$(wc -c < /usr/local/sbin/stryker-agentd 2>/dev/null || echo 0); "
                 + "if [ -s /usr/local/sbin/stryker-agentd ] && [ -x /usr/local/sbin/stryker-agentd ] "
                 + "&& [ -f " + CORE_MARKER + " ]; then echo __DEPLOYED__; else echo __FAIL__; fi";
@@ -995,7 +995,9 @@ public final class RootlessEngine {
                 + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.HOST_PTY_PORT
                 + "-:" + RootlessPaths.GUEST_PTY_PORT
                 + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.HOST_SSH_PORT
-                + "-:" + RootlessPaths.GUEST_SSH_PORT);
+                + "-:" + RootlessPaths.GUEST_SSH_PORT
+                + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.HOST_CAPTURE_PORT
+                + "-:" + RootlessPaths.GUEST_CAPTURE_PORT);
         a.add("-device"); a.add("virtio-net-pci,netdev=net0,romfile=");
 
         if (usbEnabled) {

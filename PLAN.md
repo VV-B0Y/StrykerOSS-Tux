@@ -95,3 +95,42 @@ Flow becomes: CONSENT -> ENGINE (multi-select) -> PERMS -> [PCHECK + INSTALL_CHR
 ## Out of scope (this change)
 
 - QEMU VM backend improvements, in-the-loop agent, deauth policy — all separate concerns.
+
+---
+
+# Capture Bridge (VM → Chroot)
+
+Status: prototyped on-device, wiring in progress.
+
+## Problem
+
+The rootless VM owns the USB Wi-Fi adapter (monitor mode, passive capture), but the chroot
+is where the pentest tools live. The chroot can't see the VM's monitor interface, so capture
+data only reaches it as finished pcap files via the 9p share — there is no live channel.
+
+## Verified facts (on-device)
+
+- Guest is Debian 13, kernel 6.12.94 (arm64). `airmon-ng`/`airodump-ng`/`iw`/`socat` present;
+  `tcpdump` is NOT installed by default (now the relay's dependency).
+- The chroot shares the host network namespace, so it already reaches the VM's forwarded ports
+  (127.0.0.1:1050 raw shell, 127.0.0.1:2222 guest SSH). Proven: chroot -> 127.0.0.1:1050
+  returned the guest kernel string.
+- No RTL8812AU driver in the guest (no `rtw88_8812au`, no `88XXau`) on 6.12.94 — needs the
+  aircrack-ng/rtl8812au DKMS build. Separate prerequisite from the bridge.
+
+## Design
+
+A live capture relay alongside the existing agent ports:
+
+- Guest: `stryker-agentd` gains a 5th socat server on 1053 -> `/usr/local/sbin/stryker-capture-relay`,
+  which streams the monitor interface (`wlan0mon|mon0|wlan0`) as a live pcap via `tcpdump -U -w -`.
+- App: `hostfwd=tcp:127.0.0.1:1053-:1053` added to the SLIRP netdev (RootlessEngine),
+  `HOST_CAPTURE_PORT`/`GUEST_CAPTURE_PORT` = 1053 (RootlessPaths).
+- Chroot: reads the stream from 127.0.0.1:1053, e.g.
+  `socat -u TCP:127.0.0.1:1053 - > /sdcard/Stryker/captured/live.pcap`.
+
+## Remaining
+
+- Chroot helper script + dashboard toggle (start/stop the relay) — follow-up.
+- RTL8812AU driver build + USB passthrough + adapter attach — required for end-to-end
+  capture, out of scope for the bridge wiring.
