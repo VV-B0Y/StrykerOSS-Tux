@@ -524,7 +524,7 @@ class NeoTermActivity : AppCompatActivity(), ServiceConnection, SharedPreference
     val sessionCallback = TermSessionCallback()
     val viewClient = TermViewClient(this)
 
-    val rootless = java.io.File(filesDir, "rootless/.active").exists()
+    val rootless = java.io.File(filesDir, "rootless/vms/vm0/.active").exists()
     val parameter = ShellParameter().callback(sessionCallback)
     if (rootless) {
       parameter.executablePath("pty:127.0.0.1:1051")

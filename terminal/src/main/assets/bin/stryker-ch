@@ -12,7 +12,7 @@
 # behaviour), so there is never a regression.
 
 STRYKER_FILES=/data/data/com.zalexdev.stryker/files
-ROOTLESS_FLAG=$STRYKER_FILES/rootless/.active
+ROOTLESS_FLAG=$STRYKER_FILES/rootless/vms/vm0/.active
 MARKER=$STRYKER_FILES/.vm_pty_resize
 
 # Wide Android PATH (include common su manager locations).

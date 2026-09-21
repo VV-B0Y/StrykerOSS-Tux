@@ -90,6 +90,10 @@ public class Dashboard extends Fragment {
         activity = getActivity();
         context = getContext();
         core = new Core(context);
+        // The terminal module detects rootless mode by a flag file (the app's SharedPreferences are
+        // encrypted, so the terminal can't read them); that flag is only written on an explicit engine
+        // switch. Rewrite it here so a fresh launch keeps the terminal pointing at the guest.
+        if (core.isRootless()) EngineType.persist(core, EngineType.ROOTLESS);
         return inflater.inflate(R.layout.fragment_dashboard, container, false);
     }
 
