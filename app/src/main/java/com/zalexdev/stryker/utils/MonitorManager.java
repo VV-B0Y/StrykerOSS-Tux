@@ -97,11 +97,14 @@ public class MonitorManager {
     }
 
     private boolean enableMonitorModeRootless(String ifc, String channel){
+        logger.writeLine("monitor(rootless): ensuring USB Wi-Fi attached…", 1);
         if (!core.rootless().ensureUsbWifiAttached()) {
             logger.writeLine("No USB Wi-Fi adapter attached to the VM — cannot enable monitor mode", 3);
             return false;
         }
+        logger.writeLine("monitor(rootless): USB attached, checking monitor state on " + ifc, 1);
         if (!isMonitorModeEnabled(ifc)) {
+            logger.writeLine("monitor(rootless): running monitor-setup command on " + ifc, 1);
             StringBuilder cmd = new StringBuilder();
             cmd.append("rfkill unblock all 2>/dev/null || for f in /sys/class/rfkill/*/state; do echo 1 > \"$f\" 2>/dev/null; done; ");
             cmd.append("airmon-ng check kill >/dev/null 2>&1; ");
@@ -109,7 +112,9 @@ public class MonitorManager {
             cmd.append("iw dev ").append(ifc).append(" set type monitor 2>/dev/null || airmon-ng start ").append(ifc).append("; ");
             cmd.append("ip link set ").append(ifc).append(" up 2>/dev/null");
             core.customChrootCommand(cmd.toString());
+            logger.writeLine("monitor(rootless): setup command finished", 1);
         }
+        logger.writeLine("monitor(rootless): locking channel…", 1);
         return lockChannel(ifc, channel);
     }
 
