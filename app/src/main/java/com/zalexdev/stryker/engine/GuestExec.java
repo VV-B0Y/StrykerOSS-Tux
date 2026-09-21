@@ -12,6 +12,13 @@ import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 
+/**
+ * Client for the in-guest command server (stryker-agentd).
+ *
+ * <p>Each VM runs its own agent on its own host port, so this is an instance bound to one VM's
+ * exec port rather than a process-wide singleton. {@link RootlessEngine} holds one instance per
+ * VM. {@link #logToStore} stays static because it is just diagnostic logging with no VM affinity.
+ */
 public final class GuestExec {
 
     private static final String TAG = "GuestExec";
@@ -23,7 +30,41 @@ public final class GuestExec {
     private static final int CONNECT_TIMEOUT_MS = 4000;
     private static final int READ_TIMEOUT_MS = 90_000;
 
-    private GuestExec() {}
+    private final int hostPort;
+    private final String loopback;
+
+    public GuestExec(int hostPort) {
+        this(hostPort, RootlessPaths.HOST_LOOPBACK);
+    }
+
+    public GuestExec(int hostPort, String loopback) {
+        this.hostPort = hostPort;
+        this.loopback = loopback;
+    }
+
+    public int hostPort() {
+        return hostPort;
+    }
+
+    // ---- static shims (legacy callers that still assume the vm0 exec port) ----
+
+    private static final GuestExec DEFAULT = new GuestExec(RootlessPaths.HOST_EXEC_PORT);
+
+    public static ArrayList<String> run(String command) {
+        return DEFAULT.exec(command);
+    }
+
+    public static Session open(String command) throws IOException {
+        return DEFAULT.session(command);
+    }
+
+    public static Session openJob(String command) throws IOException {
+        return DEFAULT.sessionJob(command);
+    }
+
+    public static boolean ping(int timeoutMs) {
+        return DEFAULT.reachable(timeoutMs);
+    }
 
     private static String wrap(String command) {
         return "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin${PATH:+:$PATH}; "
@@ -49,21 +90,21 @@ public final class GuestExec {
                 + "rm -f " + script + " " + pidFile + "\n";
     }
 
-    private static void killJob(String jobId) {
+    private void killJob(String jobId) {
         final String pidFile = JOB_DIR + "/stryker-" + jobId + ".pid";
         final String cmd =
                 "if [ -f " + pidFile + " ]; then __g=$(cat " + pidFile + " 2>/dev/null); "
                         + "if [ -n \"$__g\" ]; then kill -TERM -$__g 2>/dev/null || kill -TERM $__g 2>/dev/null; "
                         + "sleep 1; kill -KILL -$__g 2>/dev/null || kill -KILL $__g 2>/dev/null; fi; fi; "
                         + "rm -f " + JOB_DIR + "/stryker-" + jobId + ".sh " + pidFile;
-        new Thread(() -> run(cmd), "guest-killjob").start();
+        new Thread(() -> exec(cmd), "guest-killjob").start();
     }
 
-    public static ArrayList<String> run(String command) {
+    public ArrayList<String> exec(String command) {
         ArrayList<String> out = new ArrayList<>();
         Session s = null;
         try {
-            s = open(command);
+            s = session(command);
             s.socket.setSoTimeout(READ_TIMEOUT_MS);
             String line;
             while ((line = s.reader.readLine()) != null) {
@@ -80,7 +121,7 @@ public final class GuestExec {
                     + "s with no output (hung?) · " + shortCmd(command));
         } catch (IOException e) {
             Log.w(TAG, "run failed: " + e.getMessage());
-            logToStore("guest exec failed — VM not reachable on :" + RootlessPaths.HOST_EXEC_PORT
+            logToStore("guest exec failed — VM not reachable on :" + hostPort
                     + " (" + e.getMessage() + ") · " + shortCmd(command));
         } finally {
             if (s != null) s.close();
@@ -101,18 +142,17 @@ public final class GuestExec {
         return c.length() > 90 ? c.substring(0, 90) + "…" : c;
     }
 
-    public static Session open(String command) throws IOException {
+    public Session session(String command) throws IOException {
         return connect(command, null);
     }
 
-    public static Session openJob(String command) throws IOException {
+    public Session sessionJob(String command) throws IOException {
         return connect(command, Long.toHexString(System.nanoTime()) + "-" + JOB_SEQ.incrementAndGet());
     }
 
-    private static Session connect(String command, String jobId) throws IOException {
+    private Session connect(String command, String jobId) throws IOException {
         Socket sock = new Socket();
-        sock.connect(new InetSocketAddress(RootlessPaths.HOST_LOOPBACK, RootlessPaths.HOST_EXEC_PORT),
-                CONNECT_TIMEOUT_MS);
+        sock.connect(new InetSocketAddress(loopback, hostPort), CONNECT_TIMEOUT_MS);
         sock.setKeepAlive(true);
         OutputStream os = sock.getOutputStream();
         String payload = jobId == null ? wrap(command) : wrapJob(command, jobId);
@@ -125,13 +165,12 @@ public final class GuestExec {
 
     /**
      * A bare TCP connect proves nothing here: QEMU's SLIRP hostfwd listener accepts on
-     * 127.0.0.1:1050 from the moment the VM process starts, long before anything inside the guest
+     * 127.0.0.1:<port> from the moment the VM process starts, long before anything inside the guest
      * listens on that port. Readiness therefore has to be a round trip through the guest shell.
      */
-    public static boolean ping(int timeoutMs) {
+    public boolean reachable(int timeoutMs) {
         try (Socket sock = new Socket()) {
-            sock.connect(new InetSocketAddress(RootlessPaths.HOST_LOOPBACK, RootlessPaths.HOST_EXEC_PORT),
-                    timeoutMs);
+            sock.connect(new InetSocketAddress(loopback, hostPort), timeoutMs);
             sock.setSoTimeout(Math.max(timeoutMs, 400));
             OutputStream os = sock.getOutputStream();
             os.write(("echo " + PING_MARK + "\nexit\n").getBytes(StandardCharsets.UTF_8));
@@ -148,7 +187,7 @@ public final class GuestExec {
         }
     }
 
-    public static final class Session {
+    public final class Session {
         public final Socket socket;
         public final InputStream input;
         public final BufferedReader reader;
@@ -170,7 +209,7 @@ public final class GuestExec {
             boolean first = !closed;
             closed = true;
             try { socket.close(); } catch (IOException ignored) {}
-            if (first && jobId != null) killJob(jobId);
+            if (first && jobId != null) GuestExec.this.killJob(jobId);
         }
     }
 }

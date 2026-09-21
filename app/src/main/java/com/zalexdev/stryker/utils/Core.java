@@ -61,6 +61,7 @@ import com.zalexdev.stryker.engine.Apt;
 import com.zalexdev.stryker.engine.EngineType;
 import com.zalexdev.stryker.engine.GuestCore;
 import com.zalexdev.stryker.engine.RootlessEngine;
+import com.zalexdev.stryker.engine.VmRegistry;
 import com.zalexdev.stryker.logger.LogTool;
 import com.zalexdev.stryker.logger.Logger;
 
@@ -1163,6 +1164,10 @@ public class Core {
 
     public RootlessEngine rootless() {
         return RootlessEngine.get(context);
+    }
+
+    public RootlessEngine vm(String id) {
+        return VmRegistry.get(context).engine(context, id);
     }
 
     /** Whether the chroot rootfs is present on disk (host-side check, no su). */

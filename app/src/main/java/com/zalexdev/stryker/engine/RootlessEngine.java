@@ -24,9 +24,10 @@ public final class RootlessEngine {
     private static final int BOOT_TIMEOUT_MS = 150_000;
     private static final String PROMPT_MARK = "__STRYKER_ID__";
 
-    private static volatile RootlessEngine instance;
-
     private final Context app;
+    private final String vmId;
+    private final int vmIndex;
+    private final GuestExec guestExec;
     private final ExecutorService qemuExecutor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "stryker-qemu");
         t.setDaemon(true);
@@ -60,26 +61,24 @@ public final class RootlessEngine {
 
     public enum State { STOPPED, BOOTING, READY }
 
-    private RootlessEngine(Context context) {
+    RootlessEngine(Context context, String vmId, int vmIndex) {
         this.app = context.getApplicationContext();
+        this.vmId = vmId;
+        this.vmIndex = vmIndex;
+        this.guestExec = new GuestExec(RootlessPaths.hostExecPort(vmIndex));
     }
 
     public static RootlessEngine get(Context context) {
-        if (instance == null) {
-            synchronized (RootlessEngine.class) {
-                if (instance == null) instance = new RootlessEngine(context);
-            }
-        }
-        return instance;
+        return VmRegistry.get(context).engine(context, VmRegistry.DEFAULT_ID);
     }
 
 
     public boolean isInstalled() {
         return RootlessPaths.qemuBin(app).exists()
-                && RootlessPaths.kernel(app).exists()
-                && RootlessPaths.initrd(app).exists()
+                && RootlessPaths.kernel(app, vmId).exists()
+                && RootlessPaths.initrd(app, vmId).exists()
                 && RootlessPaths.libslirp(app).exists()
-                && RootlessPaths.rootfs(app).exists();
+                && RootlessPaths.rootfs(app, vmId).exists();
     }
 
     public boolean isRunning() {
@@ -89,7 +88,7 @@ public final class RootlessEngine {
 
     public boolean isReady() {
         if (!isRunning() || !booted) return false;
-        if (!GuestExec.ping(1000)) return false;
+        if (!guestExec.reachable(1000)) return false;
         lastGuestOk = System.currentTimeMillis();
         return true;
     }
@@ -99,7 +98,7 @@ public final class RootlessEngine {
         if (isReady()) { if (listener != null) listener.onBooted(); return true; }
         if (isRunning() && booted) {
             for (int i = 0; i < 5; i++) {
-                if (GuestExec.ping(2000)) {
+                if (guestExec.reachable(2000)) {
                     if (listener != null) listener.onBooted();
                     return true;
                 }
@@ -178,7 +177,7 @@ public final class RootlessEngine {
                 if (!isAlive(proc)) {
                     return "QEMU exited during boot (code " + safeExit(proc) + "): " + lastLogProblem();
                 }
-                if (GuestExec.ping(1500) && guestShellReady()) {
+                if (guestExec.reachable(1500) && guestShellReady()) {
                     markBooted();
                     if (listener != null) listener.onBooted();
                     return null;
@@ -212,7 +211,7 @@ public final class RootlessEngine {
 
     private boolean guestShellReady() {
         try {
-            ArrayList<String> out = GuestExec.run(
+            ArrayList<String> out = guestExec.exec(
                     "printf '" + PROMPT_MARK + "%s@%s\\n' \"$(id -un 2>/dev/null)\" \"$(hostname 2>/dev/null)\"");
             for (String l : out) {
                 if (l == null) continue;
@@ -251,7 +250,7 @@ public final class RootlessEngine {
 
     private void autoGrowDisk() {
         try {
-            File img = RootlessPaths.rootfs(app);
+            File img = RootlessPaths.rootfs(app, vmId);
             if (!img.exists()) return;
             if (!VmSpecs.shouldAutoGrow(app)) return;
             long target = VmSpecs.autoDiskTargetBytes(app);
@@ -271,16 +270,16 @@ public final class RootlessEngine {
 
     private void reclaimFreedSpace() {
         try {
-            GuestExec.run("command -v fstrim >/dev/null 2>&1 && fstrim / 2>&1 || true");
+            guestExec.exec("command -v fstrim >/dev/null 2>&1 && fstrim / 2>&1 || true");
         } catch (Throwable t) {
             Log.w(TAG, "fstrim: " + t.getMessage());
         }
     }
 
     private void clearStaleSockets() {
-        deleteQuietly(RootlessPaths.qmpSock(app));
-        deleteQuietly(RootlessPaths.serialSock(app));
-        deleteQuietly(RootlessPaths.termSock(app));
+        deleteQuietly(RootlessPaths.qmpSock(app, vmId));
+        deleteQuietly(RootlessPaths.serialSock(app, vmId));
+        deleteQuietly(RootlessPaths.termSock(app, vmId));
     }
 
     private static void deleteQuietly(File f) {
@@ -392,7 +391,7 @@ public final class RootlessEngine {
     public enum ResizeResult { OK, ALREADY_THAT_SIZE, SHRINK_UNSUPPORTED, VM_STILL_RUNNING, IMAGE_MISSING, IO_ERROR }
 
     public synchronized ResizeResult resizeDisk(long targetBytes) {
-        File img = RootlessPaths.rootfs(app);
+        File img = RootlessPaths.rootfs(app, vmId);
         if (!img.exists()) return ResizeResult.IMAGE_MISSING;
         long current = img.length();
         if (targetBytes == current) return ResizeResult.ALREADY_THAT_SIZE;
@@ -434,7 +433,7 @@ public final class RootlessEngine {
                 return;
             }
             GuestExec.logToStore("expanding VM disk filesystem (resize2fs /dev/vda)…");
-            ArrayList<String> out = GuestExec.run(
+            ArrayList<String> out = guestExec.exec(
                     "command -v resize2fs >/dev/null 2>&1 && echo __HAS_RESIZE2FS__ || echo __NO_RESIZE2FS__; "
                     + "echo __BEFORE__; df -k / | tail -n 1; "
                     + "resize2fs /dev/vda 2>&1 || resize2fs -f /dev/vda 2>&1; "
@@ -484,7 +483,7 @@ public final class RootlessEngine {
 
     private void ensureWifiFirmware() {
         try {
-            ArrayList<String> have = GuestExec.run(
+            ArrayList<String> have = guestExec.exec(
                     "[ -f " + ATH9K_HTC_FW + " ] && echo __FW_OK__ || echo __FW_MISSING__");
             for (String l : have) {
                 if (l != null && l.contains("__FW_OK__")) return;
@@ -492,10 +491,10 @@ public final class RootlessEngine {
             GuestExec.logToStore("guest is missing " + ATH9K_HTC_FW
                     + " — installing firmware-ath9k-htc (ath9k_htc dongles fail with "
                     + "\"Target is unresponsive\" without it)");
-            GuestExec.run("export DEBIAN_FRONTEND=noninteractive; "
+            guestExec.exec("export DEBIAN_FRONTEND=noninteractive; "
                     + "apt-get install -y --no-install-recommends firmware-ath9k-htc wireless-regdb "
                     + ">/dev/null 2>&1; true");
-            ArrayList<String> after = GuestExec.run(
+            ArrayList<String> after = guestExec.exec(
                     "[ -f " + ATH9K_HTC_FW + " ] && echo __FW_OK__ || echo __FW_MISSING__");
             for (String l : after) {
                 if (l != null && l.contains("__FW_OK__")) {
@@ -511,14 +510,14 @@ public final class RootlessEngine {
     private void ensureKernelModules() {
         ensureWifiFirmware();
         try {
-            GuestExec.run("mkdir -p /etc/modules-load.d; "
+            guestExec.exec("mkdir -p /etc/modules-load.d; "
                     + "{ echo loop; echo squashfs; echo overlay; } > /etc/modules-load.d/stryker.conf 2>/dev/null; true");
             if (guestHasModules()) {
-                GuestExec.run("modprobe loop >/dev/null 2>&1; modprobe squashfs >/dev/null 2>&1; "
+                guestExec.exec("modprobe loop >/dev/null 2>&1; modprobe squashfs >/dev/null 2>&1; "
                         + "modprobe overlay >/dev/null 2>&1; true");
                 return;
             }
-            File initrd = RootlessPaths.initrd(app);
+            File initrd = RootlessPaths.initrd(app, vmId);
             File share = resolveShareDir();
             if (!initrd.exists() || share == null) return;
             File staged = new File(share, ".initrd.img");
@@ -530,7 +529,7 @@ public final class RootlessEngine {
                 while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
                 out.flush();
             }
-            GuestExec.run("command -v cpio >/dev/null 2>&1 || "
+            guestExec.exec("command -v cpio >/dev/null 2>&1 || "
                     + "(export DEBIAN_FRONTEND=noninteractive; apt-get install -y --no-install-recommends cpio >/dev/null 2>&1); "
                     + "rm -rf /tmp/stryker-ird; mkdir -p /tmp/stryker-ird; cd /tmp/stryker-ird; "
                     + "(cpio -idm < /sdcard/Stryker/.initrd.img || busybox cpio -idm < /sdcard/Stryker/.initrd.img) >/dev/null 2>&1; "
@@ -539,7 +538,7 @@ public final class RootlessEngine {
                     + "echo __MODULES_DEPLOYED__; fi; rm -rf /tmp/stryker-ird");
             //noinspection ResultOfMethodCallIgnored
             staged.delete();
-            ArrayList<String> res = GuestExec.run(
+            ArrayList<String> res = guestExec.exec(
                     "modprobe loop >/dev/null 2>&1; modprobe squashfs >/dev/null 2>&1; "
                     + "losetup -f >/dev/null 2>&1 && echo __LOOP_OK__ || echo __LOOP_NO__");
             for (String l : res) {
@@ -555,7 +554,7 @@ public final class RootlessEngine {
     }
 
     private boolean guestHasModules() {
-        ArrayList<String> out = GuestExec.run(
+        ArrayList<String> out = guestExec.exec(
                 "[ -d \"/lib/modules/$(uname -r)/kernel\" ] && echo __HAS_MODULES__ || echo __NO_MODULES__");
         for (String l : out) {
             if (l != null && l.trim().equals("__HAS_MODULES__")) return true;
@@ -585,12 +584,12 @@ public final class RootlessEngine {
             GuestExec.logToStore("VM is not running — start it from the dashboard, then retry");
             return new ArrayList<>();
         }
-        return GuestExec.run(command);
+        return guestExec.exec(command);
     }
 
     public GuestExec.Session openStream(String command) throws java.io.IOException {
         if (!isReady()) startBlocking(null);
-        return GuestExec.openJob(command);
+        return guestExec.sessionJob(command);
     }
 
 
@@ -601,7 +600,7 @@ public final class RootlessEngine {
 
     public synchronized boolean ensureGuestCore() {
         if (!isReady() && !startBlocking(null)) return false;
-        ArrayList<String> chk = GuestExec.run("[ -f " + CORE_MARKER + " ] && "
+        ArrayList<String> chk = guestExec.exec("[ -f " + CORE_MARKER + " ] && "
                 + "cat " + GuestCore.VERSION_FILE + " 2>/dev/null || echo __NO__");
         for (String l : chk) {
             if (l != null && GuestCore.VERSION.equals(l.trim())) return true;
@@ -650,7 +649,7 @@ public final class RootlessEngine {
             java.io.File shareDir = resolveShareDir();
             if (shareDir == null) return false;
             java.io.File staged = stageGuestCore(shareDir);
-            ArrayList<String> res = GuestExec.run(
+            ArrayList<String> res = guestExec.exec(
                     unpackAndVerify("/sdcard/Stryker/" + STAGED_CORE));
             for (String l : res) {
                 if (l != null && l.trim().startsWith("__AGENT_BYTES__")) {
@@ -685,7 +684,7 @@ public final class RootlessEngine {
      * so it exits on startup, or simply not running.
      */
     public boolean bootstrapAgentOverConsole() {
-        String sock = RootlessPaths.serialSock(app).getAbsolutePath();
+        String sock = RootlessPaths.serialSock(app, vmId).getAbsolutePath();
         if (!new File(sock).exists()) return false;
 
         GuestExec.logToStore("guest agent unreachable — bootstrapping it over the serial console");
@@ -739,11 +738,11 @@ public final class RootlessEngine {
     }
 
     private void restartGuestAgent() {
-        GuestExec.run("(systemctl restart stryker-agent.service >/dev/null 2>&1 "
+        guestExec.exec("(systemctl restart stryker-agent.service >/dev/null 2>&1 "
                 + "|| (pkill -f stryker-agentd >/dev/null 2>&1; "
                 + "setsid /usr/local/sbin/stryker-agentd >/dev/null 2>&1 &)) &");
         for (int i = 0; i < 20; i++) {
-            for (String l : GuestExec.run(
+            for (String l : guestExec.exec(
                     "ss -ltn 2>/dev/null | grep -q ':1052' && echo __UP__ || echo __NO__")) {
                 if (l != null && l.trim().equals("__UP__")) return;
             }
@@ -779,9 +778,9 @@ public final class RootlessEngine {
         return usbDriverOk;
     }
 
-    private static java.util.List<String> guestWlanInterfaces() {
+    private java.util.List<String> guestWlanInterfaces() {
         java.util.List<String> out = new java.util.ArrayList<>();
-        for (String l : GuestExec.run(
+        for (String l : guestExec.exec(
                 "iw dev 2>/dev/null | awk '$1==\"Interface\"{print $2}'")) {
             if (l != null && !l.trim().isEmpty()) out.add(l.trim());
         }
@@ -864,14 +863,14 @@ public final class RootlessEngine {
 
     public State statusBlocking() {
         if (isRunning()) {
-            if (GuestExec.ping(1500)) {
+            if (guestExec.reachable(1500)) {
                 lastGuestOk = System.currentTimeMillis();
                 markBooted();
                 return State.READY;
             }
             return State.BOOTING;
         }
-        if (GuestExec.ping(1500)) {
+        if (guestExec.reachable(1500)) {
             lastGuestOk = System.currentTimeMillis();
             return State.READY;
         }
@@ -902,8 +901,8 @@ public final class RootlessEngine {
 
     public java.util.List<String> tailLog(int maxLines) {
         java.util.ArrayList<String> out = new java.util.ArrayList<>();
-        File log = RootlessPaths.serialLog(app);
-        if (!log.exists() || log.length() == 0) log = RootlessPaths.bootLog(app);
+        File log = RootlessPaths.serialLog(app, vmId);
+        if (!log.exists() || log.length() == 0) log = RootlessPaths.bootLog(app, vmId);
         if (!log.exists()) return out;
         java.util.ArrayDeque<String> ring = new java.util.ArrayDeque<>();
         try (BufferedReader br = new BufferedReader(new InputStreamReader(new java.io.FileInputStream(log)))) {
@@ -919,7 +918,7 @@ public final class RootlessEngine {
 
     private void connectControl() {
         try {
-            qmp = new QmpClient(RootlessPaths.qmpSock(app).getAbsolutePath());
+            qmp = new QmpClient(RootlessPaths.qmpSock(app, vmId).getAbsolutePath());
             if (qmp.connect()) {
                 usb = new UsbPassthroughManager(app, qmp);
             } else {
@@ -973,11 +972,11 @@ public final class RootlessEngine {
         a.add("-smp"); a.add(cpus + ",sockets=1,cores=" + cpus + ",threads=1");
         a.add("-m");   a.add(String.valueOf(ramMb));
 
-        a.add("-kernel"); a.add(RootlessPaths.kernel(app).getAbsolutePath());
-        a.add("-initrd"); a.add(RootlessPaths.initrd(app).getAbsolutePath());
+        a.add("-kernel"); a.add(RootlessPaths.kernel(app, vmId).getAbsolutePath());
+        a.add("-initrd"); a.add(RootlessPaths.initrd(app, vmId).getAbsolutePath());
         a.add("-append"); a.add(kernelCmdline(fastBoot));
 
-        a.add("-drive"); a.add("file=" + RootlessPaths.rootfs(app).getAbsolutePath()
+        a.add("-drive"); a.add("file=" + RootlessPaths.rootfs(app, vmId).getAbsolutePath()
                 + ",if=none,id=drive0,format=raw,cache=" + cacheMode + ",aio=" + aioMode
                 + ",discard=unmap,detect-zeroes=unmap");
         if (ioThread) {
@@ -988,15 +987,15 @@ public final class RootlessEngine {
         }
 
         a.add("-netdev"); a.add("user,id=net0,ipv6=off"
-                + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.HOST_EXEC_PORT
+                + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.hostExecPort(vmIndex)
                 + "-:" + RootlessPaths.GUEST_EXEC_PORT
-                + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.HOST_TERM_PORT
+                + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.hostTermPort(vmIndex)
                 + "-:" + RootlessPaths.GUEST_TERM_PORT
-                + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.HOST_PTY_PORT
+                + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.hostPtyPort(vmIndex)
                 + "-:" + RootlessPaths.GUEST_PTY_PORT
-                + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.HOST_SSH_PORT
+                + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.hostSshPort(vmIndex)
                 + "-:" + RootlessPaths.GUEST_SSH_PORT
-                + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.HOST_CAPTURE_PORT
+                + ",hostfwd=tcp:" + RootlessPaths.HOST_LOOPBACK + ":" + RootlessPaths.hostCapturePort(vmIndex)
                 + "-:" + RootlessPaths.GUEST_CAPTURE_PORT);
         a.add("-device"); a.add("virtio-net-pci,netdev=net0,romfile=");
 
@@ -1024,16 +1023,16 @@ public final class RootlessEngine {
                     + "reports written inside the guest will not be visible to the app");
         }
 
-        a.add("-chardev"); a.add("socket,id=serial0,path=" + RootlessPaths.serialSock(app).getAbsolutePath()
-                + ",server=on,wait=off,logfile=" + RootlessPaths.serialLog(app).getAbsolutePath());
+        a.add("-chardev"); a.add("socket,id=serial0,path=" + RootlessPaths.serialSock(app, vmId).getAbsolutePath()
+                + ",server=on,wait=off,logfile=" + RootlessPaths.serialLog(app, vmId).getAbsolutePath());
         a.add("-serial"); a.add("chardev:serial0");
         a.add("-device"); a.add("virtio-serial-pci");
-        a.add("-chardev"); a.add("socket,id=term0,path=" + RootlessPaths.termSock(app).getAbsolutePath()
+        a.add("-chardev"); a.add("socket,id=term0,path=" + RootlessPaths.termSock(app, vmId).getAbsolutePath()
                 + ",server=on,wait=off");
         a.add("-device"); a.add("virtconsole,chardev=term0,name=org.stryker.term");
 
         a.add("-display"); a.add("none");
-        a.add("-qmp"); a.add("unix:" + RootlessPaths.qmpSock(app).getAbsolutePath() + ",server,nowait");
+        a.add("-qmp"); a.add("unix:" + RootlessPaths.qmpSock(app, vmId).getAbsolutePath() + ",server,nowait");
         return a;
     }
 
@@ -1099,7 +1098,7 @@ public final class RootlessEngine {
     }
 
     private void pumpBootLog(Process proc, BootListener listener) {
-        File log = RootlessPaths.bootLog(app);
+        File log = RootlessPaths.bootLog(app, vmId);
         try (InputStream in = proc.getInputStream();
              BufferedReader br = new BufferedReader(new InputStreamReader(in));
              FileWriter fw = new FileWriter(log, false)) {
