@@ -16,8 +16,13 @@ public class MonitorManager {
     public Core core;
     public Logger logger;
 
-    public UsbDev internalUsbDev = new UsbDev("wlan0","wlan0","ip link set $ifc down; echo '4' > /sys/module/wlan/parameters/con_mode; ip link set $ifc up","ip link set $ifc down; echo '0' > /sys/module/wlan/parameters/con_mode; ip link set $ifc up");
-    public UsbDev internalUsbSamsung = new UsbDev("swlan0","swlan0","ip link set $ifc down; echo '4' > /sys/module/wlan/parameters/con_mode; ip link set $ifc up","ip link set $ifc down; echo '0' > /sys/module/wlan/parameters/con_mode");
+    // con_mode module path differs by chip: Qualcomm FastConnect 7800/WCN7851 uses
+    // "kiwi_v2", older/Samsung qcacld uses "wlan". Try both so either binds.
+    public static final String CON_MODE_4 = "echo '4' > /sys/module/kiwi_v2/parameters/con_mode 2>/dev/null || echo '4' > /sys/module/wlan/parameters/con_mode";
+    public static final String CON_MODE_0 = "echo '0' > /sys/module/kiwi_v2/parameters/con_mode 2>/dev/null || echo '0' > /sys/module/wlan/parameters/con_mode";
+
+    public UsbDev internalUsbDev = new UsbDev("wlan0","wlan0","ip link set $ifc down; " + CON_MODE_4 + "; ip link set $ifc up","ip link set $ifc down; " + CON_MODE_0 + "; ip link set $ifc up");
+    public UsbDev internalUsbSamsung = new UsbDev("swlan0","swlan0","ip link set $ifc down; " + CON_MODE_4 + "; ip link set $ifc up","ip link set $ifc down; " + CON_MODE_0 + "; ip link set $ifc up");
 
     public MonitorManager(Core core) {
         this.core = core;
