@@ -218,6 +218,13 @@ public class Wifi extends Fragment {
                     }
                 }
 
+                // Chroot mode + internal chip (wlan0): a raw `iw scan` returns EBUSY (-16) while
+                // the Android Wi-Fi framework owns the interface, so use the reliable airodump-ng
+                // passive scan (the same path the rootless internal bridge uses).
+                if (list == null && !core.isRootless() && "wlan0".equals(wlan)) {
+                    list = scanInternalChipBridge(true);
+                }
+
                 if (list == null) {
                     if (core.isRootless()) {
                         com.zalexdev.stryker.logger.Logger log = new com.zalexdev.stryker.logger.Logger();
