@@ -138,12 +138,15 @@ public abstract class AdvancedProcess {
     private void startRootless() {
         activity.runOnUiThread(this::onPrepare);
         logger.writeLine("Rootless command: " + cmd, 1, tool);
+        int exitCode = -1;
         try {
             if (!killed) {
                 guestSession = core.rootless().openStream(cmd);
                 String line;
                 while (!killed && (line = guestSession.reader.readLine()) != null) {
                     if (line.startsWith(GuestExec.Session.SENTINEL)) {
+                        try { exitCode = Integer.parseInt(line.substring(GuestExec.Session.SENTINEL.length()).trim()); }
+                        catch (NumberFormatException ignored) {}
                         break;
                     }
                     line = line.trim();
@@ -164,6 +167,16 @@ public abstract class AdvancedProcess {
             logger.writeLine("Rootless exec failed (VM not reachable?): " + e.getMessage(), 3, tool);
         } finally {
             if (guestSession != null) guestSession.close();
+        }
+        // Always log the exit status, even when noLog suppresses per-line output, so the
+        // airodump/mdk4 failure (exit code + trailing stderr) is diagnosable from the log.
+        boolean failed = exitCode != 0;
+        logger.writeLine("Rootless finished: exit=" + exitCode + " lines=" + outputList.size() + " cmd=" + cmd, failed ? 3 : 1, tool);
+        if (failed) {
+            int from = Math.max(0, outputList.size() - 25);
+            for (int i = from; i < outputList.size(); i++) {
+                logger.writeLine("[out] " + outputList.get(i), 3, tool);
+            }
         }
         activity.runOnUiThread(() -> onFinished(outputList));
         running = false;

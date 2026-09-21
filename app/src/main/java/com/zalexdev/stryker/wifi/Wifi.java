@@ -866,16 +866,57 @@ public class Wifi extends Fragment {
             safeUi(() -> outputtext.setText("Starting monitor mode on " + requestedIface + "...\n"));
             boolean monitor = core.monitorManager.enableMonitorMode(requestedIface);
             String capIface = requestedIface;
-            final String[] cmds = new String[2]; // [0] = working fallback, [1] = aggressive
             if (!monitor) {
                 safeUi(() -> outputtext.setText(getString(R.string.wifi_monitor_failed, requestedIface)));
             } else {
                 capIface = core.getHSInterface();
                 core.customChrootCommand("mkdir -p /sdcard/Stryker/hs /sdcard/Stryker/captured; "
                         + "rm -f /sdcard/Stryker/hs/handshakenow*");
-                cmds[0] = "airodump-ng " + capIface + " -w /sdcard/Stryker/hs/handshakenow --ignore-negative-one --output-format pcap,csv --update 3";
-                cmds[1] = "stdbuf -oL airodump-ng " + capIface + " -w /sdcard/Stryker/hs/handshakenow --ignore-negative-one --output-format pcap,csv --band bg --update 3";
-                airodump = makeMassAirodump(cmds[1], csvReader, totalSuccess, outputtext, timertext);
+                String cmd = "airodump-ng " + capIface + " -w /sdcard/Stryker/hs/handshakenow --ignore-negative-one --output-format pcap,csv  --update 3";
+                airodump = new AdvancedProcess(activity, context, cmd, true) {
+                    @Override
+                    public void onFinished(ArrayList<String> outputList) {
+                        if (isAdded() && alive.get()) {
+                            outputtext.setText("Attack finished due to error.\n");
+                        }
+                        try {
+                            csvReader.get().cancel();
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                        // Don't leave mdk4 running or the chip stuck in monitor mode when the capture dies.
+                        new Thread(() -> {
+                            if (mdk4 != null) mdk4.kill();
+                            try {
+                                core.monitorManager.disableMonitorMode(core.getHSInterface());
+                                core.monitorManager.disableMonitorMode(core.getDeauthInterface());
+                            } catch (Throwable ignored) {}
+                        }, "hs-cleanup").start();
+                    }
+
+                    @Override
+                    public void onNewLine(String line) {
+
+                        if (line.contains("WPA handshake")) {
+                            Matcher m = Pattern.compile("((\\w{2}:){5}\\w{2})").matcher(line);
+                            if (m.find()) {
+                                if (!hs.contains(m.group())) {
+                                    hs.add(m.group());
+                                    totalSuccess[0]++;
+                                    if (isAdded() && alive.get()) {
+                                        timertext.setText("Success: " + totalSuccess[0]);
+                                    }
+                                }
+                            }
+                        }
+
+                    }
+
+                    @Override
+                    public void onEvent(String line) {
+
+                    }
+                };
                 airodump.setNoLog(true);
             }
 
@@ -892,20 +933,6 @@ public class Wifi extends Fragment {
                     } catch (InterruptedException e) {
                         break;
                     }
-                }
-            }
-            // Fallback: aggressive scan produced no APs — retry with the working command.
-            if (s && !hasApRows(hsDir + "/handshakenow-01.csv")) {
-                safeUi(() -> outputtext.append("No APs on aggressive scan — falling back to default scan.\n"));
-                if (airodump != null) airodump.kill();
-                try { Thread.sleep(500); } catch (InterruptedException ignored) {}
-                airodump = makeMassAirodump(cmds[0], csvReader, totalSuccess, outputtext, timertext);
-                airodump.setNoLog(true);
-                s = false;
-                for (int i = 0; i < 40 && alive.get(); i++) {
-                    if (core.checkFile(hsDir + "/handshakenow-01.csv")) { s = true; break; }
-                    if (airodump != null && !airodump.isRunning()) break;
-                    try { Thread.sleep(500); } catch (InterruptedException e) { break; }
                 }
             }
             if (s) {
@@ -1002,7 +1029,7 @@ public class Wifi extends Fragment {
                     core.monitorManager.enableMonitorMode(deauthIface);
                     deauthIface = core.getDeauthInterface();
                 }
-                mdk4 = new AdvancedProcess(activity, context, "stdbuf -oL mdk4 " + deauthIface + " d", true) {
+                mdk4 = new AdvancedProcess(activity, context, "mdk4 " + deauthIface + " d", true) {
                     @Override
                     public void onFinished(ArrayList<String> outputList) {
                         core.toaster("Mdk4 stopped");
@@ -1075,65 +1102,6 @@ public class Wifi extends Fragment {
         dialog.show();
     }
 
-    private AdvancedProcess makeMassAirodump(String cmd, AtomicReference<Timer> csvReader, int[] totalSuccess, TextView outputtext, TextView timertext) {
-        return new AdvancedProcess(activity, context, cmd, true) {
-            @Override
-            public void onFinished(ArrayList<String> outputList) {
-                if (isAdded() && alive.get()) {
-                    outputtext.setText("Attack finished due to error.\n");
-                }
-                try {
-                    csvReader.get().cancel();
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-
-            @Override
-            public void onNewLine(String line) {
-                if (line.contains("WPA handshake")) {
-                    if (isAdded() && alive.get()) {
-                        outputtext.append(line + "\n");
-                    }
-                    Matcher m = Pattern.compile("((\\w{2}:){5}\\w{2})").matcher(line);
-                    if (m.find()) {
-                        if (!hs.contains(m.group())) {
-                            hs.add(m.group());
-                            totalSuccess[0]++;
-                            if (isAdded() && alive.get()) {
-                                timertext.setText("Success: " + totalSuccess[0]);
-                            }
-                        }
-                    }
-                }
-            }
-
-            @Override
-            public void onEvent(String line) {
-            }
-        };
-    }
-
-    private boolean hasApRows(String csvPath) {
-        try (BufferedReader br = new BufferedReader(new FileReader(csvPath))) {
-            String line;
-            boolean station = false;
-            while ((line = br.readLine()) != null) {
-                String[] parts = line.split(",");
-                if (parts.length > 1) {
-                    String first = parts[0].trim();
-                    if (first.equals("Station MAC")) station = true;
-                    if (!station && !first.equals("BSSID")
-                            && first.matches("^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")) {
-                        return true;
-                    }
-                }
-            }
-        } catch (Exception ignored) {
-        }
-        return false;
-    }
-
     public void runDeauth() {
         final Dialog dialog = new Dialog(context);
         dialog.setContentView(R.layout.wifi_dialog_hs);
@@ -1158,7 +1126,7 @@ public class Wifi extends Fragment {
             final String requestedIface = core.getDeauthInterface();
             safeUi(() -> outputtext.append("Interface: " + requestedIface + "\n"));
             if (core.monitorManager.enableMonitorMode(requestedIface)) {
-                mdk4 = new AdvancedProcess(activity, context, "stdbuf -oL mdk4 " + core.getDeauthInterface() + " d", true) {
+                mdk4 = new AdvancedProcess(activity, context, "mdk4 " + core.getDeauthInterface() + " d", true) {
 
                     @Override
                     protected void onPrepare() {
