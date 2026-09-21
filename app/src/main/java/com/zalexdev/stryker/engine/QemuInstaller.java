@@ -388,37 +388,38 @@ public final class QemuInstaller {
                 return false;
             }
 
-            java.io.File share = engine.resolveShareDir();
-            if (share == null) {
-                log(p, 3, "No share dir available to stage the helper script");
-                return false;
-            }
-            java.io.File staged = new java.io.File(share, ".stryker-helper.sh");
-            try (java.io.InputStream in = context.getAssets().open(HELPER_ASSET);
-                 java.io.FileOutputStream out = new java.io.FileOutputStream(staged)) {
+            // Ship the role script into the guest as base64 over the exec port — no 9p share
+            // dependency (the share is not reliable across the two VMs).
+            java.io.ByteArrayOutputStream bytes = new java.io.ByteArrayOutputStream();
+            try (java.io.InputStream in = context.getAssets().open(HELPER_ASSET)) {
                 byte[] buf = new byte[8192];
                 int r;
-                while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
-                out.flush();
-                out.getFD().sync();
+                while ((r = in.read(buf)) != -1) bytes.write(buf, 0, r);
             }
+            String b64 = android.util.Base64.encodeToString(bytes.toByteArray(), android.util.Base64.NO_WRAP);
 
             stage(p, Stage.FINALIZING);
             log(p, 1, "Running the helper role setup (apt-get installs take a few minutes)…");
-            engine.exec("cp -f /sdcard/Stryker/.stryker-helper.sh /tmp/.stryker-helper.sh; "
-                    + "sed -i 's/\\r$//' /tmp/.stryker-helper.sh; "
+            engine.exec("echo '" + b64 + "' | base64 -d > /tmp/.stryker-helper.sh; "
                     + "chmod 0755 /tmp/.stryker-helper.sh; "
                     + "nohup bash /tmp/.stryker-helper.sh > /tmp/.stryker-helper.log 2>&1 & "
                     + "echo started");
 
             long deadline = System.currentTimeMillis() + 10 * 60_000L;
+            String lastShown = "";
             while (System.currentTimeMillis() < deadline) {
                 if (helperMarkerPresent(engine)) {
                     stage(p, Stage.DONE);
                     log(p, 2, "Helper role applied");
                     return true;
                 }
-                Thread.sleep(5000);
+                // Stream the last log line so the user can watch apt-get progress live.
+                String tail = guestLogTail(engine);
+                if (tail != null && !tail.equals(lastShown)) {
+                    lastShown = tail;
+                    log(p, 1, tail);
+                }
+                Thread.sleep(3000);
             }
             log(p, 3, "Helper role did not finish in time — check /tmp/.stryker-helper.log");
             return false;
@@ -434,6 +435,14 @@ public final class QemuInstaller {
             if (l != null && l.trim().equals("1")) return true;
         }
         return false;
+    }
+
+    private static String guestLogTail(RootlessEngine engine) {
+        for (String l : engine.exec("tail -n 1 /tmp/.stryker-helper.log 2>/dev/null")) {
+            String t = l == null ? "" : l.trim();
+            if (!t.isEmpty()) return t;
+        }
+        return null;
     }
 
     private static void copyAsset(AssetManager am, String assetPath, File dest, Progress p, String label)
