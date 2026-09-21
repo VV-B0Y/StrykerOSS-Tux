@@ -332,11 +332,15 @@ public class Dashboard extends Fragment {
                 }
                 @Override public void onBooted() {
                     Activity host = activity;
-                    if (host != null) host.runOnUiThread(() -> refreshVmStatus(c));
+                    if (host != null) host.runOnUiThread(() -> {
+                        if (!isAdded()) return;
+                        refreshVmStatus(c);
+                    });
                 }
                 @Override public void onFailed(String reason) {
                     Activity host = activity;
                     if (host != null) host.runOnUiThread(() -> {
+                        if (!isAdded()) return;
                         if (c.badge != null) c.badge.setText(R.string.vm_boot_failed);
                         refreshVmStatus(c);
                     });
@@ -363,6 +367,7 @@ public class Dashboard extends Fragment {
     }
 
     private void applyBootStage(VmCard c, List<String> lines) {
+        if (!isAdded()) return;
         int stage = VmBootStage.detect(lines);
         if (c.ring != null) {
             c.ring.setState(VmRingView.STATE_BOOTING);
