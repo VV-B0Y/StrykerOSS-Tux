@@ -1,6 +1,6 @@
 # Multi-VM Rootless Engine — Design Plan
 
-Status: draft, awaiting sign-off on open decisions.
+Status: helper-VM role locked; engine foundation + dashboard implemented (commits `8b5b2bd`..`dd0c3fe`).
 
 ## Requirements (from user)
 
@@ -12,6 +12,32 @@ Status: draft, awaiting sign-off on open decisions.
 4. **Clone a VM** — copy an existing VM's disk to a new VM.
 5. **Create a new VM from the existing install script** — re-run provisioning to a fresh slot.
 6. **Per-VM kernel (and initrd) support** — a VM may override the default kernel/initrd.
+7. **Helper VM (sidecar)** — the second VM is a lean offsec helper / obfuscation layer for
+   vm0, not a second desktop (section below).
+
+## Helper VM (sidecar) — role
+
+vm1 is not a second full machine. It is a lightweight sidecar that serves as an offsec
+helper + obfuscation layer for vm0:
+
+- **OS**: the **same Stryker image** (same base rootfs as vm0), booted headless as a server.
+- **Keep the Realtek (RTL8812AU) driver intact** so it can put the external USB adapter into
+  monitor mode and capture WPA handshakes (airodump-ng/aircrack-ng). The strip-to-server step
+  must NOT remove the Realtek driver or the aircrack tooling.
+- **Roles**: (1) relay vm0's traffic (redirector/obfuscation), (2) capture handshakes off the
+  external adapter, (3) host payloads (HTTP), (4) DNS / C2 relay.
+- **Egress**: Tor (or a user VPN) so the relay actually changes the egress IP.
+- **Resources**: half the autotuned RAM/CPU (already implemented).
+- **WiFi capture**: the external RTL8812AU dongle is passed into the helper (USB passthrough,
+  exclusive — vm0 and the helper cannot both hold it at once).
+
+Provisioning the helper = clone the base template (same as vm0) + a **helper-role setup** inside
+the new VM: boot headless, install server tooling (tor, nginx, dnsmasq, tcpdump, tshark, socat),
+and KEEP the Realtek driver + aircrack-ng. "Strip to server" removes the desktop, not the drivers.
+
+Networking: a private VM↔VM link (QEMU socket netdev pair) so vm0 can route through the helper;
+the helper runs Tor (SOCKS) as the relay. This makes the formerly-deferred "shared networking"
+the point of the helper.
 
 ## Current architecture (single-VM)
 
@@ -134,3 +160,10 @@ isolated from everything except the host-forwarded ports. Bridged mode is the he
 3. Disk size: **custom value allowed when creating a VM not from the Stryker template**
    (clone / imported image); a Stryker-template VM uses the template's default size.
 4. Second VM RAM/CPU: **half the autotuned value**.
+5. Helper VM OS: **the same Stryker image** (not a separate minimal OS).
+6. Helper VM keeps the **Realtek (RTL8812AU) driver** intact for external-adapter handshake
+   capture; strip-to-server must preserve it + aircrack tooling.
+7. Helper roles: **relay + handshake capture + payload host + DNS/C2**; egress via **Tor** now,
+   VPN pluggable later.
+8. Helper handshake capture is via the **external USB adapter** (RTL8812AU) passed into the
+   helper — the internal chip stays host-side.
