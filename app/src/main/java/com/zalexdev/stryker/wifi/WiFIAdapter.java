@@ -703,9 +703,9 @@ public class WiFIAdapter extends RecyclerView.Adapter<WiFIAdapter.ViewHolder> {
                         if (canceled) return;
                         new Thread(() -> {
                             if (canceled) return;
-                            String cmd = "airodump-ng " + capIface + " -w /sdcard/Stryker/hs/handshake  --ignore-negative-one --output-format pcap -c "+network.getChannel()+" --bssid " + network.getMac()+" --update 3";
+                            String cmd = "stdbuf -oL airodump-ng " + capIface + " -w /sdcard/Stryker/hs/handshake  --ignore-negative-one --output-format pcap -c "+network.getChannel()+" --bssid " + network.getMac()+" --update 3";
                             if (network.getIs5hhz() && network.getChannel() <= 0){
-                                cmd = "airodump-ng " + capIface + " -w /sdcard/Stryker/hs/handshake --ignore-negative-one --output-format pcap  --bssid " + network.getMac() + " --band a --update 3";
+                                cmd = "stdbuf -oL airodump-ng " + capIface + " -w /sdcard/Stryker/hs/handshake --ignore-negative-one --output-format pcap  --bssid " + network.getMac() + " --band a --update 3";
                             }
 
 
