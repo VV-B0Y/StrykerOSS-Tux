@@ -116,6 +116,8 @@ public class HostCaptureBridge {
      */
     public void cleanup() {
         running = false;
+        com.zalexdev.stryker.logger.Logger log = new com.zalexdev.stryker.logger.Logger();
+        log.writeLine("cleanup: killing capture…", 1, "wifi");
         core.customCommandSuC(
                 "p=$(cat " + PID_FILE + " 2>/dev/null); "
                 + "[ -n \"$p\" ] && kill $p 2>/dev/null; "
@@ -124,6 +126,7 @@ public class HostCaptureBridge {
                 + "pkill -f 'airodump-ng.*bridge/cap' 2>/dev/null; "
                 + "pkill -f 'tcpdump.*bridge' 2>/dev/null; "
                 + "rm -f " + PID_FILE + "; true", 15000);
+        log.writeLine("cleanup: capture killed", 2, "wifi");
         if (core.isRootless()) {
             core.customCommandSuC("umount " + CHROOT + CHROOT_DIR + " 2>/dev/null; true", 10000);
         }
@@ -131,7 +134,9 @@ public class HostCaptureBridge {
         // un-sticks the radio; `svc wifi enable` can block indefinitely while the framework
         // re-initializes out of monitor mode, so run it detached — the next capture/scan issues
         // `svc wifi disable` anyway, so a blocking enable here only delays the self-heal.
+        log.writeLine("cleanup: restoring managed…", 1, "wifi");
         core.customCommandSuC(CON_MODE_0 + "; (svc wifi enable >/dev/null 2>&1 &) ; true", 15000);
+        log.writeLine("cleanup: done", 2, "wifi");
     }
 
     /** True when the internal chip is in managed mode (con_mode == 0), i.e. scans will work. */
@@ -158,14 +163,21 @@ public class HostCaptureBridge {
      * is never disturbed. Safe to call any time; used as a scan self-heal and on app start.
      */
     public static void ensureManaged(Core core) {
+        com.zalexdev.stryker.logger.Logger log = new com.zalexdev.stryker.logger.Logger();
+        log.writeLine("ensureManaged: checking radio state…", 1, "wifi");
         ArrayList<String> out = core.customCommandSuC(
                 "c=$(cat /sys/module/kiwi_v2/parameters/con_mode 2>/dev/null); "
                 + "p=$(cat " + PID_FILE + " 2>/dev/null); "
                 + "alive=0; [ -n \"$p\" ] && kill -0 $p 2>/dev/null && alive=1; "
                 + "if { [ -n \"$c\" ] && [ \"$c\" != \"0\" ]; } || [ \"$alive\" = \"1\" ]; "
-                + "then echo DIRTY; else echo CLEAN; fi");
+                + "then echo DIRTY; else echo CLEAN; fi", 10000);
+        log.writeLine("ensureManaged: state=" + (out.isEmpty() ? "?" : out.get(0).trim()), 2, "wifi");
         boolean dirty = !out.isEmpty() && out.get(0).trim().equals("DIRTY");
-        if (dirty) new HostCaptureBridge(core).cleanup();
+        if (dirty) {
+            log.writeLine("ensureManaged: DIRTY — running cleanup…", 1, "wifi");
+            new HostCaptureBridge(core).cleanup();
+            log.writeLine("ensureManaged: cleanup finished", 2, "wifi");
+        }
     }
 
     /** Move the finished capture into the app-visible captured/ dir. Returns true on success. */
