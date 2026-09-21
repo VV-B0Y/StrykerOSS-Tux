@@ -940,8 +940,8 @@ public final class RootlessEngine {
         Core prefs = null;
         try {
             prefs = new Core(app);
-            cpus = VmSpecs.effectiveCpus(app, prefs);
-            ramMb = VmSpecs.effectiveRamMb(app, prefs);
+            cpus = VmSpecs.effectiveCpus(app, prefs, vmIndex);
+            ramMb = VmSpecs.effectiveRamMb(app, prefs, vmIndex);
             usbEnabled = VmSpecs.usbEnabled(prefs);
             shareEnabled = VmSpecs.shareEnabled(prefs);
             rngEnabled = VmSpecs.rngEnabled(prefs);

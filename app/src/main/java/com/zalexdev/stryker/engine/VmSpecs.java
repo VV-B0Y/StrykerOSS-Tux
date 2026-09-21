@@ -141,14 +141,22 @@ public final class VmSpecs {
 
 
     public static int effectiveCpus(Context ctx, Core core) {
+        return effectiveCpus(ctx, core, 0);
+    }
+
+    public static int effectiveCpus(Context ctx, Core core, int vmIndex) {
         int v = core.getInt(K_CPUS, 0);
-        if (v <= 0) v = recommendedCpus();
+        if (v <= 0) v = vmIndex <= 0 ? recommendedCpus() : Math.max(1, recommendedCpus() / 2);
         return clamp(v, 1, deviceCores());
     }
 
     public static int effectiveRamMb(Context ctx, Core core) {
+        return effectiveRamMb(ctx, core, 0);
+    }
+
+    public static int effectiveRamMb(Context ctx, Core core, int vmIndex) {
         int v = core.getInt(K_RAM, 0);
-        if (v <= 0) v = recommendedRamMb(ctx);
+        if (v <= 0) v = vmIndex <= 0 ? recommendedRamMb(ctx) : Math.max(MIN_RAM_MB, recommendedRamMb(ctx) / 2);
         return clamp(v, MIN_RAM_MB, maxRamMb(ctx));
     }
 
