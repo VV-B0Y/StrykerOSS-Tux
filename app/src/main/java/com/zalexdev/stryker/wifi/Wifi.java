@@ -207,6 +207,11 @@ public class Wifi extends Fragment {
 
         scanThread = new Thread(() -> {
             try {
+                // Self-heal: if a prior capture left the internal chip in monitor mode, restore
+                // managed mode so iw scan returns APs instead of failing with -EINVAL.
+                core.customCommandSuC("c=$(cat /sys/module/kiwi_v2/parameters/con_mode 2>/dev/null); "
+                        + "if [ -n \"$c\" ] && [ \"$c\" != \"0\" ]; then "
+                        + "echo 0 > /sys/module/kiwi_v2/parameters/con_mode; svc wifi enable; fi");
                 if (Core.WIFI_INTERNAL.equals(wlan) || Core.WIFI_INTERNAL_HOST.equals(wlan)) {
                     if (core.isRootless()) {
                         list = scanInternalChipBridge(Core.WIFI_INTERNAL.equals(wlan));
@@ -1253,6 +1258,12 @@ public class Wifi extends Fragment {
                 resulttext.setText(ok ? "Saved to:\n" + destShow : "No packets captured.");
             });
         }).start());
+        dialog.setOnDismissListener(d -> {
+            if (capturing[0]) {
+                capturing[0] = false;
+                new Thread(bridge::stop).start();
+            }
+        });
         dialog.show();
     }
 
