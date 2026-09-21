@@ -1091,13 +1091,19 @@ public class Wifi extends Fragment {
                 if (captured > 0) {
                     String strDate = new SimpleDateFormat("dd-MM_HH-mm", Locale.ENGLISH).format(new Date());
                     String dest = capturedDir + "/MassHS_" + captured + "_" + strDate + ".cap";
-                    java.io.File src = newestCapture(hsDir, "handshakenow-");
-                    boolean saved = false;
-                    if (src != null) {
-                        //noinspection ResultOfMethodCallIgnored
-                        new java.io.File(capturedDir).mkdirs();
-                        core.moveFile(src.getAbsolutePath(), dest);
-                        saved = new java.io.File(dest).isFile();
+                    boolean saved;
+                    if (core.isRootless()) {
+                        // 9p share may be off (safe mode) — pull the .cap from the guest as base64.
+                        saved = saveGuestCapture(dest);
+                    } else {
+                        java.io.File src = newestCapture(hsDir, "handshakenow-");
+                        saved = false;
+                        if (src != null) {
+                            //noinspection ResultOfMethodCallIgnored
+                            new java.io.File(capturedDir).mkdirs();
+                            core.moveFile(src.getAbsolutePath(), dest);
+                            saved = new java.io.File(dest).isFile();
+                        }
                     }
                     final boolean ok = saved;
                     safeUi(() -> resulttext.setText(ok
@@ -1318,6 +1324,26 @@ public class Wifi extends Fragment {
             }
         }
         return newest;
+    }
+
+    private boolean saveGuestCapture(String dest) {
+        try {
+            ArrayList<String> out = core.customChrootCommand(
+                    "base64 -w0 /sdcard/Stryker/hs/handshakenow-01.cap 2>/dev/null");
+            StringBuilder sb = new StringBuilder();
+            for (String l : out) sb.append(l.trim());
+            if (sb.length() == 0) return false;
+            byte[] bytes = android.util.Base64.decode(sb.toString(), android.util.Base64.NO_WRAP);
+            java.io.File f = new java.io.File(dest);
+            if (f.getParentFile() != null) f.getParentFile().mkdirs();
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(f)) {
+                fos.write(bytes);
+            }
+            return f.isFile() && f.length() > 0;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
     }
 
     public void smoothScrool(TextView outputtext) {
