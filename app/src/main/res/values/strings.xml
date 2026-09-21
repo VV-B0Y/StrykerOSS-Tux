@@ -1346,4 +1346,32 @@ Storage is only consumed as the guest writes, and space freed inside the VM is r
     <string name="vm_stat_cpu">CPU load</string>
     <string name="vm_stat_ram">Memory</string>
     <string name="vm_stat_placeholder">—</string>
+
+    <string name="vm_add">Add VM</string>
+    <string name="vm_add_title">Add a VM</string>
+    <string name="vm_add_clone">Clone existing VM</string>
+    <string name="vm_add_new">New VM from template</string>
+    <string name="vm_clone_title">Clone VM</string>
+    <string name="vm_new_title">New VM</string>
+    <string name="vm_source_label">Source VM</string>
+    <string name="vm_name_hint">Display name</string>
+    <string name="vm_disk_size_label">Disk size (GB)</string>
+    <string name="vm_disk_size_hint">Empty = same as source</string>
+    <string name="vm_disk_size_invalid">Enter a number for the disk size (GB)</string>
+    <string name="vm_progress_cloning">Cloning VM…</string>
+    <string name="vm_progress_installing">Installing VM template…</string>
+    <string name="vm_created">VM created</string>
+    <string name="vm_error_clone">Clone failed</string>
+    <string name="vm_error_install">Template install failed</string>
+    <string name="vm_error_capacity">VM limit reached (max 2)</string>
+    <string name="vm_menu_rename">Rename</string>
+    <string name="vm_menu_delete">Delete</string>
+    <string name="vm_menu_clone">Clone this VM</string>
+    <string name="vm_rename_title">Rename VM</string>
+    <string name="vm_delete_title">Delete VM?</string>
+    <string name="vm_delete_message">Delete \"%1$s\" and its disk? This cannot be undone.</string>
+    <string name="vm_delete_last">You must keep at least one VM</string>
+    <string name="vm_starting">Starting…</string>
+    <string name="vm_stopping">Stopping…</string>
+    <string name="vm_boot_failed">Boot failed</string>
 </resources>

@@ -15,11 +15,16 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
+import android.widget.ArrayAdapter;
+import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.Spinner;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.app.ActivityCompat;
 import androidx.fragment.app.Fragment;
 
@@ -33,9 +38,13 @@ import com.zalexdev.stryker.MainActivity;
 import com.zalexdev.stryker.R;
 import com.zalexdev.stryker.arsenal.ArsenalFragment;
 import com.zalexdev.stryker.engine.EngineType;
+import com.zalexdev.stryker.engine.QemuInstaller;
 import com.zalexdev.stryker.engine.RootlessEngine;
+import com.zalexdev.stryker.engine.RootlessPaths;
 import com.zalexdev.stryker.engine.RootlessService;
 import com.zalexdev.stryker.engine.VmBootStage;
+import com.zalexdev.stryker.engine.VmRegistry;
+import com.zalexdev.stryker.engine.VmSpecs;
 import com.zalexdev.stryker.engine.VmStatsCollector;
 import com.zalexdev.stryker.utils.Core;
 import com.zalexdev.stryker.utils.SparklineView;
@@ -58,29 +67,22 @@ public class Dashboard extends Fragment {
     private Core core;
     private final MainActivity.Receiver receiver = new MainActivity.Receiver();
 
-    private RootlessEngine vmEngine;
-    private View vmCard;
-    private TextView vmBadge, vmSpecs, vmUsb, vmStatusChevron, vmLogsChevron, vmLogText;
-    private android.widget.ScrollView vmLogScroll;
-    private String lastVmLog;
-    private TextView vmCpuValue, vmRamValue;
-    private SparklineView vmCpuGraph, vmRamGraph;
-    private VmRingView vmRing;
-    private ExpandableLayout vmStatusExpand, vmLogsExpand;
+    private LinearLayout vmListContainer;
+    private MaterialButton vmAddBtn;
+    private final List<VmCard> vmCards = new ArrayList<>();
+    private VmStatsCollector vmCollector;
+    private ExecutorService vmStatsExec;
+    private final AtomicBoolean vmSampling = new AtomicBoolean(false);
+    private final Handler vmHandler = new Handler(Looper.getMainLooper());
+    private boolean vmRefreshing = false;
+    private Runnable vmTick;
+    private AlertDialog progressDialog;
+    private TextView progressText;
 
     private View chrootCard;
     private TextView chrootBadge, chrootSpecs;
     private MaterialButton chrootMountBtn;
     private com.google.android.material.button.MaterialButtonToggleGroup engineToggleGroup;
-
-    private final Handler vmHandler = new Handler(Looper.getMainLooper());
-    private boolean vmRefreshing = false;
-    private Runnable vmTick;
-    private VmStatsCollector vmCollector;
-    private TextView vmStatsChevron, vmStatsSummary, vmUsbChevron, vmUsbDetails;
-    private ExpandableLayout vmStatsExpand, vmUsbExpand;
-    private ExecutorService vmStatsExec;
-    private final AtomicBoolean vmSampling = new AtomicBoolean(false);
 
     @Nullable
     @Override
@@ -179,57 +181,81 @@ public class Dashboard extends Fragment {
 
         setupEngineSelector(view);
         setupChrootCard(view);
-        setupVmCard(view);
+        setupVmCards(view);
 
         showFirstScanTip(menuWifi);
     }
 
 
-    private void setupVmCard(View view) {
-        vmCard = view.findViewById(R.id.vm_card);
-        if (vmCard == null) return;
+    private void setupVmCards(View view) {
+        vmListContainer = view.findViewById(R.id.vm_list_container);
+        vmAddBtn = view.findViewById(R.id.vm_btn_add);
+        if (vmListContainer == null) return;
         if (!core.vmInstalled()) {
-            vmCard.setVisibility(View.GONE);
+            vmListContainer.setVisibility(View.GONE);
+            if (vmAddBtn != null) vmAddBtn.setVisibility(View.GONE);
             return;
         }
-        vmCard.setVisibility(View.VISIBLE);
-
-        TextView cardTitle = view.findViewById(R.id.vm_card_title);
-        vmBadge = view.findViewById(R.id.vm_status_badge);
-        vmSpecs = view.findViewById(R.id.vm_specs_value);
-        vmUsb = view.findViewById(R.id.vm_usb_value);
-        vmStatusChevron = view.findViewById(R.id.vm_status_chevron);
-        vmStatusExpand = view.findViewById(R.id.vm_status_expand);
-        vmRing = view.findViewById(R.id.vm_ring);
-
-        view.findViewById(R.id.vm_status_header).setOnClickListener(v -> {
-            vmStatusExpand.toggle();
-            vmStatusChevron.setText(vmStatusExpand.isExpanded() ? "▾" : "▸");
-        });
-
-        if (cardTitle != null) cardTitle.setText("Rootless VM");
-        vmEngine = core.rootless();
         vmCollector = VmStatsCollector.get(context);
         vmCollector.start();
+        vmStatsExec = Executors.newSingleThreadExecutor();
 
-        vmStatsChevron = view.findViewById(R.id.vm_stats_chevron);
-        vmStatsExpand = view.findViewById(R.id.vm_stats_expand);
-        vmStatsSummary = view.findViewById(R.id.vm_stats_summary);
-        vmCpuValue = view.findViewById(R.id.vm_cpu_stat_value);
-        vmRamValue = view.findViewById(R.id.vm_ram_stat_value);
-        vmCpuGraph = view.findViewById(R.id.vm_cpu_stat_graph);
-        vmRamGraph = view.findViewById(R.id.vm_ram_stat_graph);
+        if (vmAddBtn != null) {
+            vmAddBtn.setOnClickListener(v -> showAddVmDialog(null));
+        }
 
-        vmUsbChevron = view.findViewById(R.id.vm_usb_chevron);
-        vmUsbExpand = view.findViewById(R.id.vm_usb_expand);
-        vmUsbDetails = view.findViewById(R.id.vm_usb_details);
+        renderVmCards();
 
-        vmLogsChevron = view.findViewById(R.id.vm_logs_chevron);
-        vmLogText = view.findViewById(R.id.vm_log_text);
-        vmLogScroll = view.findViewById(R.id.vm_log_scroll);
-        vmLogsExpand = view.findViewById(R.id.vm_logs_expand);
-        if (vmLogScroll != null) {
-            vmLogScroll.setOnTouchListener((v, event) -> {
+        vmTick = () -> {
+            for (VmCard c : vmCards) {
+                if (c == null) continue;
+                refreshVmStatus(c);
+                if (c.primary) sampleVmStats(c);
+                if (c.logsExpand != null && c.logsExpand.isExpanded()) refreshVmLog(c);
+            }
+            if (vmRefreshing) vmHandler.postDelayed(vmTick, 2500);
+        };
+        if (isResumed()) {
+            vmRefreshing = true;
+            vmHandler.post(vmTick);
+        }
+    }
+
+    private void renderVmCards() {
+        if (vmListContainer == null) return;
+        vmListContainer.removeAllViews();
+        vmCards.clear();
+        VmRegistry registry = VmRegistry.get(context);
+        List<VmRegistry.VmInfo> infos = registry.list();
+        LayoutInflater inflater = LayoutInflater.from(context);
+        for (VmRegistry.VmInfo info : infos) {
+            View card = inflater.inflate(R.layout.item_vm_card, vmListContainer, false);
+            VmCard holder = bindVmCard(card, info);
+            vmCards.add(holder);
+            vmListContainer.addView(card);
+        }
+        if (vmAddBtn != null) {
+            vmAddBtn.setVisibility(registry.atCapacity() ? View.GONE : View.VISIBLE);
+        }
+    }
+
+    private VmCard bindVmCard(View root, VmRegistry.VmInfo info) {
+        final VmCard c = new VmCard(info, core.vm(info.id), root, info.index == 0);
+
+        if (c.title != null) c.title.setText(info.name);
+        if (c.usbValue != null) c.usbValue.setText(R.string.vm_usb_none);
+        if (c.usbDetails != null) c.usbDetails.setText(R.string.vm_usb_none);
+        if (c.logText != null) c.logText.setText("(no console output yet)");
+        if (c.cpuValue != null) c.cpuValue.setText(R.string.vm_stat_placeholder);
+        if (c.ramValue != null) c.ramValue.setText(R.string.vm_stat_placeholder);
+
+        section(root, R.id.vm_status_header, c.statusExpand, c.statusChevron, null);
+        section(root, R.id.vm_stats_header, c.statsExpand, c.statsChevron, () -> sampleVmStats(c));
+        section(root, R.id.vm_usb_header, c.usbExpand, c.usbChevron, () -> refreshUsb(c));
+        section(root, R.id.vm_logs_header, c.logsExpand, c.logsChevron, () -> refreshVmLog(c));
+
+        if (c.logScroll != null) {
+            c.logScroll.setOnTouchListener((v, event) -> {
                 ViewParent parent = v.getParent();
                 if (parent != null) parent.requestDisallowInterceptTouchEvent(true);
                 return false;
@@ -237,45 +263,155 @@ public class Dashboard extends Fragment {
         }
 
         try {
-            if (vmCpuGraph != null) {
-                vmCpuGraph.setAccent(androidx.core.content.ContextCompat.getColor(context, R.color.accent_vm));
+            if (c.cpuGraph != null) {
+                c.cpuGraph.setAccent(androidx.core.content.ContextCompat.getColor(context, R.color.accent_vm));
             }
-            if (vmRamGraph != null) {
-                vmRamGraph.setAccent(androidx.core.content.ContextCompat.getColor(context, R.color.green));
+            if (c.ramGraph != null) {
+                c.ramGraph.setAccent(androidx.core.content.ContextCompat.getColor(context, R.color.green));
             }
         } catch (Exception ignored) {}
-        vmStatsExec = Executors.newSingleThreadExecutor();
 
-        section(view, R.id.vm_stats_header, vmStatsExpand, vmStatsChevron, this::sampleVmStats);
-        section(view, R.id.vm_usb_header, vmUsbExpand, vmUsbChevron, this::refreshUsb);
-        section(view, R.id.vm_logs_header, vmLogsExpand, vmLogsChevron, this::refreshVmLog);
+        if (c.startBtn != null) c.startBtn.setOnClickListener(v -> startVm(c));
+        if (c.stopBtn != null) c.stopBtn.setOnClickListener(v -> stopVm(c));
+        if (root.findViewById(R.id.vm_btn_refresh_log) != null) {
+            root.findViewById(R.id.vm_btn_refresh_log).setOnClickListener(v -> refreshVmLog(c));
+        }
+        if (c.moreBtn != null) c.moreBtn.setOnClickListener(v -> showVmMenu(c));
 
-        view.findViewById(R.id.vm_btn_start).setOnClickListener(v -> {
-            RootlessService.start(context);
-            if (vmCollector != null) vmCollector.start();
-            refreshVmStatus();
-        });
-        view.findViewById(R.id.vm_btn_stop).setOnClickListener(v -> {
-            RootlessService.stop(context);
-            if (vmRing != null) {
-                vmRing.setProgress(-1f);
-                vmRing.setState(VmRingView.STATE_STOPPED);
+        // SIMPLIFICATION: the CPU/RAM sparkline stats and the USB device list are backed by
+        // vm0-oriented machinery today (VmStatsCollector samples a single qemu process, and
+        // USB attach is single-VM), so they are kept only on the primary card (index 0).
+        // Additional cards still get name, status badge, specs, start/stop and a per-VM console log.
+        if (!c.primary) {
+            View divider = root.findViewById(R.id.vm_console_divider);
+            if (divider != null) divider.setVisibility(View.GONE);
+            View statsHeader = root.findViewById(R.id.vm_stats_header);
+            if (statsHeader != null) statsHeader.setVisibility(View.GONE);
+            if (c.statsExpand != null) c.statsExpand.setVisibility(View.GONE);
+            View usbDivider = root.findViewById(R.id.vm_divider_usb);
+            if (usbDivider != null) usbDivider.setVisibility(View.GONE);
+            View usbHeader = root.findViewById(R.id.vm_usb_header);
+            if (usbHeader != null) usbHeader.setVisibility(View.GONE);
+            if (c.usbExpand != null) c.usbExpand.setVisibility(View.GONE);
+        }
+
+        refreshVmStatus(c);
+        if (c.primary) refreshUsb(c);
+        return c;
+    }
+
+    private void startVm(final VmCard c) {
+        if (c.engine == null) return;
+        if (c.badge != null) {
+            c.badge.setText(R.string.vm_starting);
+            c.badge.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.stryker_accent));
+        }
+        if (c.ring != null) {
+            c.ring.setState(VmRingView.STATE_BOOTING);
+            c.ring.setProgress(-1f);
+        }
+        synchronized (c.bootLines) { c.bootLines.clear(); }
+        new Thread(() -> {
+            c.engine.startBlocking(new RootlessEngine.BootListener() {
+                @Override public void onBootLine(String line) {
+                    synchronized (c.bootLines) {
+                        c.bootLines.add(line);
+                        if (c.bootLines.size() > 160) c.bootLines.subList(0, c.bootLines.size() - 160).clear();
+                    }
+                    long now = System.currentTimeMillis();
+                    if (now - c.lastBootPost < 600) return;
+                    c.lastBootPost = now;
+                    List<String> snapshot;
+                    synchronized (c.bootLines) { snapshot = new ArrayList<>(c.bootLines); }
+                    Activity host = activity;
+                    if (host != null) host.runOnUiThread(() -> applyBootStage(c, snapshot));
+                }
+                @Override public void onBooted() {
+                    Activity host = activity;
+                    if (host != null) host.runOnUiThread(() -> refreshVmStatus(c));
+                }
+                @Override public void onFailed(String reason) {
+                    Activity host = activity;
+                    if (host != null) host.runOnUiThread(() -> {
+                        if (c.badge != null) c.badge.setText(R.string.vm_boot_failed);
+                        refreshVmStatus(c);
+                    });
+                }
+            });
+        }, "vm-start-" + c.info.id).start();
+    }
+
+    private void stopVm(final VmCard c) {
+        if (c.engine == null) return;
+        if (c.badge != null) {
+            c.badge.setText(R.string.vm_stopping);
+            c.badge.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.grey));
+        }
+        if (c.ring != null) {
+            c.ring.setState(VmRingView.STATE_STOPPED);
+            c.ring.setProgress(-1f);
+        }
+        new Thread(() -> {
+            try { c.engine.stop(); } catch (Throwable ignored) {}
+            Activity host = activity;
+            if (host != null) host.runOnUiThread(() -> refreshVmStatus(c));
+        }, "vm-stop-" + c.info.id).start();
+    }
+
+    private void applyBootStage(VmCard c, List<String> lines) {
+        int stage = VmBootStage.detect(lines);
+        if (c.ring != null) {
+            c.ring.setState(VmRingView.STATE_BOOTING);
+            c.ring.setProgress(stage >= 0 ? VmBootStage.fraction(stage) : -1f);
+        }
+        if (c.badge != null && stage > VmBootStage.START && stage < VmBootStage.READY) {
+            c.badge.setText(getString(VmBootStage.labelRes(stage)));
+        }
+    }
+
+    @SuppressLint("SetTextI18n")
+    private void refreshVmStatus(VmCard c) {
+        if (c == null || c.engine == null || c.badge == null) return;
+        RootlessEngine.State st = c.engine.status();
+        String badge;
+        int color, ring;
+        switch (st) {
+            case READY: {
+                String prompt = c.engine.guestPrompt();
+                badge = prompt == null || prompt.isEmpty() ? "Ready" : "Ready · " + prompt;
+                color = R.color.green;
+                ring = VmRingView.STATE_READY;
+                break;
             }
-            if (vmBadge != null) vmBadge.setText("Stopping…");
-            new Thread(() -> {
-                try { vmEngine.stop(); } catch (Throwable ignored) {}
-            }, "vm-stop").start();
-        });
-        view.findViewById(R.id.vm_btn_refresh_log).setOnClickListener(v -> refreshVmLog());
+            case BOOTING:
+                badge = "Booting…"; color = R.color.stryker_accent;
+                ring = VmRingView.STATE_BOOTING; break;
+            case STOPPED:
+            default:
+                badge = "Stopped"; color = R.color.grey;
+                ring = VmRingView.STATE_STOPPED; break;
+        }
+        if (c.ring != null && st != RootlessEngine.State.BOOTING) {
+            c.ring.setProgress(-1f);
+            c.ring.setState(ring);
+        }
+        if (st != RootlessEngine.State.BOOTING) c.badge.setText(badge);
+        try {
+            c.badge.setTextColor(androidx.core.content.ContextCompat.getColor(context, color));
+        } catch (Exception ignored) {}
 
-        vmTick = () -> {
-            refreshVmStatus();
-            sampleVmStats();
-            if (vmLogsExpand != null && vmLogsExpand.isExpanded()) refreshVmLog();
-            if (vmRefreshing) vmHandler.postDelayed(vmTick, 2500);
-        };
-        refreshVmStatus();
-        refreshUsb();
+        if (c.specs != null) {
+            int cpus = VmSpecs.effectiveCpus(context, core, c.info.index);
+            int ram = VmSpecs.effectiveRamMb(context, core, c.info.index);
+            long diskBytes = RootlessPaths.rootfs(context, c.info.id).length();
+            String disk = VmSpecs.humanBytes(diskBytes);
+            boolean kvm = VmSpecs.kvmAvailable();
+            c.specs.setText(cpus + " vCPU · " + ram + " MB · " + disk + " disk · " + (kvm ? "KVM" : "TCG"));
+        }
+    }
+
+    private void refreshAllVmStatus() {
+        for (VmCard c : vmCards) refreshVmStatus(c);
     }
 
     private void section(View root, int headerId, ExpandableLayout expand, TextView chevron,
@@ -290,13 +426,13 @@ public class Dashboard extends Fragment {
         });
     }
 
-    private void sampleVmStats() {
+    private void sampleVmStats(final VmCard c) {
         final VmStatsCollector collector = vmCollector;
-        final RootlessEngine engine = vmEngine;
+        final RootlessEngine engine = c == null ? null : c.engine;
         ExecutorService exec = vmStatsExec;
         if (collector == null || engine == null || exec == null || exec.isShutdown()) return;
         if (!vmSampling.compareAndSet(false, true)) return;
-        final boolean full = vmStatsExpand != null && vmStatsExpand.isExpanded();
+        final boolean full = c.statsExpand != null && c.statsExpand.isExpanded();
         try {
             exec.execute(() -> {
                 RootlessEngine.State state = RootlessEngine.State.STOPPED;
@@ -320,8 +456,8 @@ public class Dashboard extends Fragment {
                 }
                 host.runOnUiThread(() -> {
                     vmSampling.set(false);
-                    renderRing(finalState, finalStage);
-                    renderSeries(finalSeries, full);
+                    renderRing(c, finalState, finalStage);
+                    renderSeries(c, finalSeries, full);
                 });
             });
         } catch (RejectedExecutionException e) {
@@ -329,42 +465,42 @@ public class Dashboard extends Fragment {
         }
     }
 
-    private void renderRing(RootlessEngine.State state, int stage) {
-        if (vmRing == null) return;
+    private void renderRing(VmCard c, RootlessEngine.State state, int stage) {
+        if (c == null || c.ring == null) return;
         if (state == RootlessEngine.State.BOOTING) {
-            vmRing.setState(VmRingView.STATE_BOOTING);
-            vmRing.setProgress(stage >= 0 ? VmBootStage.fraction(stage) : -1f);
-            if (vmBadge != null && stage >= 0 && context != null) {
-                vmBadge.setText(context.getString(VmBootStage.labelRes(stage)));
+            c.ring.setState(VmRingView.STATE_BOOTING);
+            c.ring.setProgress(stage >= 0 ? VmBootStage.fraction(stage) : -1f);
+            if (c.badge != null && stage >= 0 && context != null) {
+                c.badge.setText(context.getString(VmBootStage.labelRes(stage)));
             }
             return;
         }
-        vmRing.setProgress(-1f);
-        vmRing.setState(state == RootlessEngine.State.READY
+        c.ring.setProgress(-1f);
+        c.ring.setState(state == RootlessEngine.State.READY
                 ? VmRingView.STATE_READY : VmRingView.STATE_STOPPED);
     }
 
-    private void renderSeries(VmStatsCollector.Series s, boolean full) {
-        if (s == null || context == null) return;
+    private void renderSeries(VmCard c, VmStatsCollector.Series s, boolean full) {
+        if (c == null || s == null || context == null) return;
         String cpuText = s.lastCpu >= 0f
                 ? String.format(Locale.ENGLISH, "%.0f%%", s.lastCpu)
                 : unavailable(s);
         String ramText = s.lastRamMb >= 0 ? readableMb(s.lastRamMb) : unavailable(s);
-        if (vmCpuValue != null) vmCpuValue.setText(cpuText);
-        if (vmRamValue != null) vmRamValue.setText(ramText);
-        if (vmStatsSummary != null) {
-            vmStatsSummary.setText(s.lastCpu >= 0f || s.lastRamMb >= 0
+        if (c.cpuValue != null) c.cpuValue.setText(cpuText);
+        if (c.ramValue != null) c.ramValue.setText(ramText);
+        if (c.statsSummary != null) {
+            c.statsSummary.setText(s.lastCpu >= 0f || s.lastRamMb >= 0
                     ? cpuText + " · " + ramText : cpuText);
         }
         if (!full) return;
-        if (vmCpuGraph != null) {
+        if (c.cpuGraph != null) {
             float[] norm = new float[s.cpu.length];
             for (int i = 0; i < norm.length; i++) {
                 norm[i] = s.cpu[i] < 0f ? -1f : s.cpu[i] / 100f;
             }
-            vmCpuGraph.setValues(norm);
+            c.cpuGraph.setValues(norm);
         }
-        if (vmRamGraph != null) vmRamGraph.setValues(s.ramFraction);
+        if (c.ramGraph != null) c.ramGraph.setValues(s.ramFraction);
     }
 
     private String unavailable(VmStatsCollector.Series s) {
@@ -374,9 +510,9 @@ public class Dashboard extends Fragment {
         return context.getString(R.string.vm_stats_waiting);
     }
 
-    private void refreshUsb() {
-        if (vmUsb == null || context == null) return;
-        final RootlessEngine engine = vmEngine;
+    private void refreshUsb(final VmCard c) {
+        if (c == null || c.usbValue == null || context == null) return;
+        final RootlessEngine engine = c.engine;
         new Thread(() -> {
             final StringBuilder details = new StringBuilder();
             int attached = 0;
@@ -404,7 +540,7 @@ public class Dashboard extends Fragment {
             Activity host = activity;
             if (host == null) return;
             host.runOnUiThread(() -> {
-                if (vmUsb == null || context == null) return;
+                if (c.usbValue == null || context == null) return;
                 String summary;
                 if (finalTotal == 0) {
                     summary = context.getString(R.string.vm_usb_none);
@@ -414,9 +550,9 @@ public class Dashboard extends Fragment {
                 } else {
                     summary = finalTotal + " · " + context.getString(R.string.vm_usb_host_only);
                 }
-                vmUsb.setText(summary);
-                if (vmUsbDetails != null) {
-                    vmUsbDetails.setText(details.length() == 0
+                c.usbValue.setText(summary);
+                if (c.usbDetails != null) {
+                    c.usbDetails.setText(details.length() == 0
                             ? context.getString(R.string.vm_usb_none) : details.toString().trim());
                 }
             });
@@ -438,83 +574,45 @@ public class Dashboard extends Fragment {
         return mb + " MB";
     }
 
-
-    @SuppressLint("SetTextI18n")
-    private void refreshVmStatus() {
-        if (vmEngine == null || vmBadge == null) return;
-        RootlessEngine.State st = vmEngine.status();
-        String badge;
-        int color, ring;
-        switch (st) {
-            case READY: {
-                String prompt = vmEngine.guestPrompt();
-                badge = prompt.isEmpty() ? "Ready" : "Ready · " + prompt;
-                color = R.color.green;
-                ring = VmRingView.STATE_READY;
-                break;
-            }
-            case BOOTING:
-                badge = "Booting…"; color = R.color.stryker_accent;
-                ring = VmRingView.STATE_BOOTING; break;
-            case STOPPED:
-            default:
-                badge = "Stopped"; color = R.color.grey;
-                ring = VmRingView.STATE_STOPPED; break;
-        }
-        if (vmRing != null && st != RootlessEngine.State.BOOTING) {
-            vmRing.setProgress(-1f);
-            vmRing.setState(ring);
-        }
-        if (st != RootlessEngine.State.BOOTING) vmBadge.setText(badge);
-        try { vmBadge.setTextColor(androidx.core.content.ContextCompat.getColor(context, color)); } catch (Exception ignored) {}
-
-        int cpus = com.zalexdev.stryker.engine.VmSpecs.effectiveCpus(context, core);
-        int ram = com.zalexdev.stryker.engine.VmSpecs.effectiveRamMb(context, core);
-        String disk = com.zalexdev.stryker.engine.VmSpecs.humanBytes(
-                com.zalexdev.stryker.engine.VmSpecs.diskAllocatedBytes(context));
-        boolean kvm = com.zalexdev.stryker.engine.VmSpecs.kvmAvailable();
-        vmSpecs.setText(cpus + " vCPU · " + ram + " MB · " + disk + " disk · " + (kvm ? "KVM" : "TCG"));
-    }
-
-    private void refreshVmLog() {
-        if (vmEngine == null || vmLogText == null) return;
+    private void refreshVmLog(final VmCard c) {
+        if (c == null || c.engine == null || c.logText == null) return;
         new Thread(() -> {
-            List<String> lines = vmEngine.tailLog(400);
+            List<String> lines = c.engine.tailLog(400);
             final StringBuilder sb = new StringBuilder();
             for (String l : lines) sb.append(l).append('\n');
             final String text = sb.length() == 0 ? "(no console output yet)" : sb.toString();
             Activity host = activity;
             if (host == null) return;
-            host.runOnUiThread(() -> applyVmLog(text));
+            host.runOnUiThread(() -> applyVmLog(c, text));
         }, "vm-log-tail").start();
     }
 
-    private void applyVmLog(String text) {
-        if (vmLogText == null || text == null) return;
-        if (text.equals(lastVmLog)) return;
-        boolean stick = isLogAtBottom();
-        lastVmLog = text;
-        vmLogText.setText(text);
-        if (stick) scrollLogToBottom();
+    private void applyVmLog(VmCard c, String text) {
+        if (c == null || c.logText == null || text == null) return;
+        if (text.equals(c.lastLog)) return;
+        boolean stick = isLogAtBottom(c);
+        c.lastLog = text;
+        c.logText.setText(text);
+        if (stick) scrollLogToBottom(c);
     }
 
-    private boolean isLogAtBottom() {
-        if (vmLogScroll == null || vmLogText == null) return true;
-        int content = vmLogText.getHeight();
+    private boolean isLogAtBottom(VmCard c) {
+        if (c == null || c.logScroll == null || c.logText == null) return true;
+        int content = c.logText.getHeight();
         if (content <= 0) return true;
-        int viewport = vmLogScroll.getHeight();
+        int viewport = c.logScroll.getHeight();
         int slack = Math.round(24f * getResources().getDisplayMetrics().density);
-        return content - (viewport + vmLogScroll.getScrollY()) <= slack;
+        return content - (viewport + c.logScroll.getScrollY()) <= slack;
     }
 
-    private void scrollLogToBottom() {
-        final android.widget.ScrollView scroll = vmLogScroll;
-        final TextView text = vmLogText;
+    private void scrollLogToBottom(final VmCard c) {
+        final android.widget.ScrollView scroll = c == null ? null : c.logScroll;
+        final TextView text = c == null ? null : c.logText;
         if (scroll == null || text == null) return;
         scroll.post(() -> {
-            if (vmLogScroll == null || vmLogText == null) return;
-            int target = Math.max(0, vmLogText.getHeight() - vmLogScroll.getHeight());
-            vmLogScroll.scrollTo(0, target);
+            if (c.logScroll == null || c.logText == null) return;
+            int target = Math.max(0, c.logText.getHeight() - c.logScroll.getHeight());
+            c.logScroll.scrollTo(0, target);
         });
     }
 
@@ -543,7 +641,7 @@ public class Dashboard extends Fragment {
                         EngineType.persist(core, active);
                         if (active == EngineType.ROOTLESS) {
                             RootlessService.start(context);
-                            refreshVmStatus();
+                            refreshAllVmStatus();
                         } else {
                             new Thread(() -> {
                                 if (!core.isMounted()) core.mountCore();
@@ -621,7 +719,7 @@ public class Dashboard extends Fragment {
     @Override
     public void onResume() {
         super.onResume();
-        if (vmEngine != null && vmTick != null) {
+        if (!vmCards.isEmpty() && vmTick != null) {
             vmRefreshing = true;
             vmHandler.post(vmTick);
         }
@@ -644,17 +742,10 @@ public class Dashboard extends Fragment {
         }
         vmSampling.set(false);
         vmCollector = null;
-        vmStatsExpand = null;
-        vmUsbExpand = null;
-        vmStatsSummary = null;
-        vmUsbDetails = null;
-        vmLogScroll = null;
-        lastVmLog = null;
-        vmRing = null;
-        vmCpuGraph = null;
-        vmRamGraph = null;
-        vmCpuValue = null;
-        vmRamValue = null;
+        dismissProgress();
+        vmCards.clear();
+        vmListContainer = null;
+        vmAddBtn = null;
         super.onDestroyView();
     }
 
@@ -746,5 +837,309 @@ public class Dashboard extends Fragment {
                     123
             );
         }
+    }
+
+    /** Per-VM card holder: binds one inflated item_vm_card to its VmInfo + RootlessEngine. */
+    private static final class VmCard {
+        final VmRegistry.VmInfo info;
+        final RootlessEngine engine;
+        final View root;
+        final boolean primary;
+        final TextView title, badge, specs, usbValue, usbDetails;
+        final TextView statusChevron, statsChevron, usbChevron, logsChevron;
+        final TextView statsSummary, cpuValue, ramValue, logText;
+        final SparklineView cpuGraph, ramGraph;
+        final VmRingView ring;
+        final ExpandableLayout statusExpand, statsExpand, usbExpand, logsExpand;
+        final android.widget.ScrollView logScroll;
+        final MaterialButton startBtn, stopBtn;
+        final TextView moreBtn;
+        String lastLog = "";
+        final List<String> bootLines = new ArrayList<>();
+        long lastBootPost = 0L;
+
+        VmCard(VmRegistry.VmInfo info, RootlessEngine engine, View root, boolean primary) {
+            this.info = info;
+            this.engine = engine;
+            this.root = root;
+            this.primary = primary;
+            this.title = root.findViewById(R.id.vm_card_title);
+            this.badge = root.findViewById(R.id.vm_status_badge);
+            this.specs = root.findViewById(R.id.vm_specs_value);
+            this.usbValue = root.findViewById(R.id.vm_usb_value);
+            this.usbDetails = root.findViewById(R.id.vm_usb_details);
+            this.statusChevron = root.findViewById(R.id.vm_status_chevron);
+            this.statsChevron = root.findViewById(R.id.vm_stats_chevron);
+            this.usbChevron = root.findViewById(R.id.vm_usb_chevron);
+            this.logsChevron = root.findViewById(R.id.vm_logs_chevron);
+            this.statsSummary = root.findViewById(R.id.vm_stats_summary);
+            this.cpuValue = root.findViewById(R.id.vm_cpu_stat_value);
+            this.ramValue = root.findViewById(R.id.vm_ram_stat_value);
+            this.logText = root.findViewById(R.id.vm_log_text);
+            this.cpuGraph = root.findViewById(R.id.vm_cpu_stat_graph);
+            this.ramGraph = root.findViewById(R.id.vm_ram_stat_graph);
+            this.ring = root.findViewById(R.id.vm_ring);
+            this.statusExpand = root.findViewById(R.id.vm_status_expand);
+            this.statsExpand = root.findViewById(R.id.vm_stats_expand);
+            this.usbExpand = root.findViewById(R.id.vm_usb_expand);
+            this.logsExpand = root.findViewById(R.id.vm_logs_expand);
+            this.logScroll = root.findViewById(R.id.vm_log_scroll);
+            this.startBtn = root.findViewById(R.id.vm_btn_start);
+            this.stopBtn = root.findViewById(R.id.vm_btn_stop);
+            this.moreBtn = root.findViewById(R.id.vm_btn_more);
+        }
+    }
+
+    private void showAddVmDialog(String defaultSourceId) {
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.vm_add_title)
+                .setItems(new String[]{
+                        getString(R.string.vm_add_clone),
+                        getString(R.string.vm_add_new)
+                }, (d, which) -> {
+                    if (which == 0) showCloneDialog(defaultSourceId);
+                    else showNewVmDialog();
+                })
+                .show();
+    }
+
+    private void showCloneDialog(String defaultSourceId) {
+        final List<VmRegistry.VmInfo> infos = VmRegistry.get(context).list();
+        if (infos.isEmpty()) return;
+
+        LinearLayout form = new LinearLayout(context);
+        form.setOrientation(LinearLayout.VERTICAL);
+        int pad = Math.round(16f * getResources().getDisplayMetrics().density);
+        form.setPadding(pad, pad, pad, pad);
+
+        TextView srcLabel = new TextView(context);
+        srcLabel.setText(R.string.vm_source_label);
+        srcLabel.setTextColor(androidx.core.content.ContextCompat.getColor(context, R.color.grey));
+        srcLabel.setTextSize(12f);
+        form.addView(srcLabel);
+
+        final Spinner source = new Spinner(context);
+        List<String> names = new ArrayList<>();
+        for (VmRegistry.VmInfo i : infos) names.add(i.name);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(context,
+                android.R.layout.simple_spinner_dropdown_item, names);
+        source.setAdapter(adapter);
+        int sel = 0;
+        for (int i = 0; i < infos.size(); i++) {
+            if (infos.get(i).id.equals(defaultSourceId)) { sel = i; break; }
+        }
+        source.setSelection(sel);
+        form.addView(source);
+
+        final EditText nameInput = new EditText(context);
+        nameInput.setHint(R.string.vm_name_hint);
+        nameInput.setSingleLine(true);
+        form.addView(nameInput);
+
+        final EditText sizeInput = new EditText(context);
+        sizeInput.setHint(R.string.vm_disk_size_hint);
+        sizeInput.setSingleLine(true);
+        sizeInput.setInputType(android.text.InputType.TYPE_CLASS_NUMBER
+                | android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL);
+        form.addView(sizeInput);
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.vm_clone_title)
+                .setView(form)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    VmRegistry.VmInfo src = infos.get(source.getSelectedItemPosition());
+                    String name = nameInput.getText().toString().trim();
+                    long sizeBytes = 0;
+                    String sizeRaw = sizeInput.getText().toString().trim();
+                    if (!sizeRaw.isEmpty()) {
+                        try {
+                            double gb = Double.parseDouble(sizeRaw);
+                            if (gb <= 0) throw new NumberFormatException();
+                            sizeBytes = (long) (gb * 1024L * 1024L * 1024L);
+                        } catch (NumberFormatException e) {
+                            core.toaster(getString(R.string.vm_disk_size_invalid));
+                            return;
+                        }
+                    }
+                    startClone(src.id, name, sizeBytes);
+                })
+                .show();
+    }
+
+    private void showNewVmDialog() {
+        LinearLayout form = new LinearLayout(context);
+        form.setOrientation(LinearLayout.VERTICAL);
+        int pad = Math.round(16f * getResources().getDisplayMetrics().density);
+        form.setPadding(pad, pad, pad, pad);
+
+        final EditText nameInput = new EditText(context);
+        nameInput.setHint(R.string.vm_name_hint);
+        nameInput.setSingleLine(true);
+        form.addView(nameInput);
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.vm_new_title)
+                .setView(form)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok, (d, w) ->
+                        startNewVm(nameInput.getText().toString().trim()))
+                .show();
+    }
+
+    private void startClone(final String srcId, final String name, final long sizeBytes) {
+        showProgress(getString(R.string.vm_progress_cloning));
+        new Thread(() -> {
+            try {
+                VmRegistry.get(context).clone(srcId, name, sizeBytes);
+                Activity host = activity;
+                if (host != null) host.runOnUiThread(() -> {
+                    dismissProgress();
+                    renderVmCards();
+                    core.toaster(getString(R.string.vm_created));
+                });
+            } catch (Throwable t) {
+                Activity host = activity;
+                if (host != null) host.runOnUiThread(() -> {
+                    dismissProgress();
+                    core.toaster(getString(R.string.vm_error_clone) + ": " + t.getMessage());
+                });
+            }
+        }, "vm-clone").start();
+    }
+
+    private void startNewVm(final String name) {
+        final VmRegistry.VmInfo info;
+        try {
+            info = VmRegistry.get(context).create(name);
+        } catch (IllegalStateException e) {
+            core.toaster(getString(R.string.vm_error_capacity));
+            return;
+        }
+        showProgress(getString(R.string.vm_progress_installing));
+        final String id = info.id;
+        new Thread(() -> {
+            final boolean ok = QemuInstaller.installRootfsForVm(context, id, new QemuInstaller.Progress() {
+                @Override public void onStage(QemuInstaller.Stage stage) {
+                    updateProgress(stage.title);
+                }
+                @Override public void onBytes(String label, long done) {
+                    updateProgress(label + " · " + VmSpecs.humanBytes(done));
+                }
+                @Override public void onLog(int level, String message) {
+                    updateProgress(message);
+                }
+            });
+            Activity host = activity;
+            if (host == null) return;
+            host.runOnUiThread(() -> {
+                dismissProgress();
+                if (ok) {
+                    renderVmCards();
+                    core.toaster(getString(R.string.vm_created));
+                } else {
+                    VmRegistry.get(context).remove(id, true);
+                    renderVmCards();
+                    core.toaster(getString(R.string.vm_error_install));
+                }
+            });
+        }, "vm-install").start();
+    }
+
+    private void showVmMenu(final VmCard c) {
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(c.info.name)
+                .setItems(new String[]{
+                        getString(R.string.vm_menu_rename),
+                        getString(R.string.vm_menu_clone),
+                        getString(R.string.vm_menu_delete)
+                }, (d, which) -> {
+                    if (which == 0) showRenameDialog(c);
+                    else if (which == 1) showAddVmDialog(c.info.id);
+                    else confirmDeleteVm(c);
+                })
+                .show();
+    }
+
+    private void showRenameDialog(final VmCard c) {
+        final EditText input = new EditText(context);
+        input.setText(c.info.name);
+        input.setSingleLine(true);
+        input.setSelection(input.length());
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.vm_rename_title)
+                .setView(input)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    String name = input.getText().toString().trim();
+                    if (name.isEmpty()) return;
+                    VmRegistry.get(context).rename(c.info.id, name);
+                    if (c.title != null) c.title.setText(c.info.name);
+                })
+                .show();
+    }
+
+    private void confirmDeleteVm(final VmCard c) {
+        final VmRegistry reg = VmRegistry.get(context);
+        if (reg.count() <= 1) {
+            core.toaster(getString(R.string.vm_delete_last));
+            return;
+        }
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.vm_delete_title)
+                .setMessage(getString(R.string.vm_delete_message, c.info.name))
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok, (d, w) -> {
+                    showProgress(getString(R.string.vm_stopping));
+                    new Thread(() -> {
+                        try { c.engine.stop(); } catch (Throwable ignored) {}
+                        Activity host = activity;
+                        if (host == null) return;
+                        host.runOnUiThread(() -> {
+                            dismissProgress();
+                            reg.remove(c.info.id, true);
+                            renderVmCards();
+                        });
+                    }, "vm-delete").start();
+                })
+                .show();
+    }
+
+    private void showProgress(String message) {
+        dismissProgress();
+        LinearLayout ll = new LinearLayout(context);
+        ll.setOrientation(LinearLayout.HORIZONTAL);
+        ll.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        int pad = Math.round(20f * getResources().getDisplayMetrics().density);
+        ll.setPadding(pad, pad, pad, pad);
+        ProgressBar pb = new ProgressBar(context);
+        ll.addView(pb, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        progressText = new TextView(context);
+        progressText.setText(message);
+        progressText.setTextSize(14f);
+        progressText.setPadding(pad, 0, 0, 0);
+        ll.addView(progressText, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        progressDialog = new MaterialAlertDialogBuilder(context)
+                .setCancelable(false)
+                .setView(ll)
+                .show();
+    }
+
+    private void updateProgress(String message) {
+        Activity host = activity;
+        if (host == null) return;
+        host.runOnUiThread(() -> {
+            if (progressText != null) progressText.setText(message);
+        });
+    }
+
+    private void dismissProgress() {
+        if (progressDialog != null && progressDialog.isShowing()) {
+            try { progressDialog.dismiss(); } catch (Throwable ignored) {}
+        }
+        progressDialog = null;
+        progressText = null;
     }
 }
