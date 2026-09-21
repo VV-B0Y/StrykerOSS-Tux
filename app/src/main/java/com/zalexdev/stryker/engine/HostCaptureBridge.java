@@ -123,11 +123,15 @@ public class HostCaptureBridge {
                 + "[ -n \"$p\" ] && kill -9 $p 2>/dev/null; "
                 + "pkill -f 'airodump-ng.*bridge/cap' 2>/dev/null; "
                 + "pkill -f 'tcpdump.*bridge' 2>/dev/null; "
-                + "rm -f " + PID_FILE + "; true");
+                + "rm -f " + PID_FILE + "; true", 15000);
         if (core.isRootless()) {
-            core.customCommandSuC("umount " + CHROOT + CHROOT_DIR + " 2>/dev/null; true");
+            core.customCommandSuC("umount " + CHROOT + CHROOT_DIR + " 2>/dev/null; true", 10000);
         }
-        core.customCommandSuC(CON_MODE_0 + "; svc wifi enable; true");
+        // Restore managed mode and re-enable Wi-Fi. The con_mode=0 write is what actually
+        // un-sticks the radio; `svc wifi enable` can block indefinitely while the framework
+        // re-initializes out of monitor mode, so run it detached — the next capture/scan issues
+        // `svc wifi disable` anyway, so a blocking enable here only delays the self-heal.
+        core.customCommandSuC(CON_MODE_0 + "; (svc wifi enable >/dev/null 2>&1 &) ; true", 15000);
     }
 
     /** True when the internal chip is in managed mode (con_mode == 0), i.e. scans will work. */
