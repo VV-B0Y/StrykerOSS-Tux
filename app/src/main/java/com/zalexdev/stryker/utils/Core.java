@@ -1096,32 +1096,48 @@ public class Core {
      *  (e.g. `iw dev wlan0 scan`) get aborted ("scan aborted!") when run through Magisk su's
      *  stdin shell, so the internal-chip bridge uses this instead of customCommand. */
     public ArrayList<String> customCommandSuC(String command){
+        return customCommandSuC(command, 0);
+    }
+
+    /** {@link #customCommandSuC(String)} with an optional wall-clock timeout (ms); 0 = wait forever. */
+    public ArrayList<String> customCommandSuC(String command, long timeoutMs){
         ArrayList<String> result = new ArrayList<>();
+        Process p;
         try {
-            Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", command});
-            Thread errThread = new Thread(() -> {
-                try (BufferedReader br = new BufferedReader(
-                        new InputStreamReader(p.getErrorStream()))) {
-                    String l;
-                    while ((l = br.readLine()) != null) {
-                        synchronized (result) { result.add(l); }
-                    }
-                } catch (IOException ignored) {}
-            }, "stryker-su-c-stderr");
-            errThread.setDaemon(true);
-            errThread.start();
-            try (BufferedReader br = new BufferedReader(
-                    new InputStreamReader(p.getInputStream()))) {
-                String l;
-                while ((l = br.readLine()) != null) {
-                    synchronized (result) { result.add(l); }
-                }
-            }
-            p.waitFor();
-            errThread.join(2000);
-        } catch (Exception e) {
+            p = Runtime.getRuntime().exec(new String[]{"su", "-c", command});
+        } catch (IOException e) {
             e.printStackTrace();
+            return result;
         }
+        final Process proc = p;
+        Thread outThread = new Thread(() -> {
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+                String l;
+                while ((l = br.readLine()) != null) synchronized (result) { result.add(l); }
+            } catch (IOException ignored) {}
+        }, "stryker-su-c-stdout");
+        Thread errThread = new Thread(() -> {
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getErrorStream()))) {
+                String l;
+                while ((l = br.readLine()) != null) synchronized (result) { result.add(l); }
+            } catch (IOException ignored) {}
+        }, "stryker-su-c-stderr");
+        outThread.setDaemon(true);
+        errThread.setDaemon(true);
+        outThread.start();
+        errThread.start();
+        try {
+            if (timeoutMs > 0) {
+                if (!proc.waitFor(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                    proc.destroyForcibly();
+                    proc.waitFor(1, java.util.concurrent.TimeUnit.SECONDS);
+                }
+            } else {
+                proc.waitFor();
+            }
+        } catch (InterruptedException ignored) {}
+        try { outThread.join(2000); } catch (InterruptedException ignored) {}
+        try { errThread.join(2000); } catch (InterruptedException ignored) {}
         return result;
     }
     public void threadCommand(String cmd){new Thread(() -> customCommand(cmd)).start();}

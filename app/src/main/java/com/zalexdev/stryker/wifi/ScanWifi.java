@@ -50,36 +50,15 @@ public class ScanWifi extends AsyncTask<Void, String, ArrayList<WiFINetwork>> {
             onPostExecute(result);
             return result;
         }
-        try {
-            Process process = core.generateSuProcess();
-            OutputStream stdin = process.getOutputStream();
-            InputStream stderr = process.getErrorStream();
-            InputStream stdout = process.getInputStream();
-            stdin.write((exec + "'iw dev " + wlan + " scan'&&echo SCANFINISHED" + '\n').getBytes());
-            stdin.flush();
-            stdin.close();
-            ArrayList<String> out2 = new ArrayList<>();
-            ArrayList<String> outerror = new ArrayList<>();
-            BufferedReader br = new BufferedReader(new InputStreamReader(stdout));
-            while ((line = br.readLine()) != null) {
-                out2.add(line);
-                if (line.contains("SCANFINISHED")) {
-                    result = parsewifi(out2);
-                    onPostExecute(result);
-                }
-            }
-            br.close();
-            br = new BufferedReader(new InputStreamReader(stderr));
-            while ((line = br.readLine()) != null) {
-                outerror.add(line);
-            }
-            
-            
-            br.close();
-            process.waitFor();
-            process.destroy();
-        } catch (IOException | InterruptedException e) {
+        // Chroot mode: scan with the Stryker chroot's own iw (/sbin/iw), independent of the Kali/
+        // NetHunter /system/bin/iw symlink. 15s timeout so a stuck driver can't hang the scan.
+        ArrayList<String> out = core.customCommandSuC(
+                "chroot " + Core.CHROOT_ROOT + " /sbin/iw dev " + wlan + " scan 2>&1", 15000);
+        result = parsewifi(out);
+        if (result.isEmpty()) {
+            result = parseWifiLenient(out);
         }
+        onPostExecute(result);
         return result;
     }
 
