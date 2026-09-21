@@ -1091,10 +1091,10 @@ public class Wifi extends Fragment {
 
             @Override
             public void onNewLine(String line) {
-                if (isAdded() && alive.get()) {
-                    outputtext.append(line + "\n");
-                }
                 if (line.contains("WPA handshake")) {
+                    if (isAdded() && alive.get()) {
+                        outputtext.append(line + "\n");
+                    }
                     Matcher m = Pattern.compile("((\\w{2}:){5}\\w{2})").matcher(line);
                     if (m.find()) {
                         if (!hs.contains(m.group())) {
