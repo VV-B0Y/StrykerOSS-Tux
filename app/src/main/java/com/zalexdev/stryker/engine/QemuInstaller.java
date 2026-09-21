@@ -368,6 +368,74 @@ public final class QemuInstaller {
         }
     }
 
+    private static final String HELPER_ASSET = "helper_server.sh";
+    private static final String HELPER_MARKER = "/HELPER/.version";
+
+    /**
+     * Applies the helper role to a VM: boots it (if needed), stages helper_server.sh into its
+     * 9p share, runs it in the guest (headless + server tooling, keeping the Realtek driver),
+     * and polls the marker until it completes. Blocking — call off the main thread.
+     */
+    public static boolean provisionHelper(Context context, String vmId, Progress p) {
+        try {
+            com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(context);
+            RootlessEngine engine = core.vm(vmId);
+            stage(p, Stage.PREPARING);
+
+            log(p, 1, "Booting the helper VM…");
+            if (!engine.isReady() && !engine.startBlocking(null)) {
+                log(p, 3, "Helper VM failed to boot");
+                return false;
+            }
+
+            java.io.File share = engine.resolveShareDir();
+            if (share == null) {
+                log(p, 3, "No share dir available to stage the helper script");
+                return false;
+            }
+            java.io.File staged = new java.io.File(share, ".stryker-helper.sh");
+            try (java.io.InputStream in = context.getAssets().open(HELPER_ASSET);
+                 java.io.FileOutputStream out = new java.io.FileOutputStream(staged)) {
+                byte[] buf = new byte[8192];
+                int r;
+                while ((r = in.read(buf)) != -1) out.write(buf, 0, r);
+                out.flush();
+                out.getFD().sync();
+            }
+
+            stage(p, Stage.FINALIZING);
+            log(p, 1, "Running the helper role setup (apt-get installs take a few minutes)…");
+            engine.exec("cp -f /sdcard/Stryker/.stryker-helper.sh /tmp/.stryker-helper.sh; "
+                    + "sed -i 's/\\r$//' /tmp/.stryker-helper.sh; "
+                    + "chmod 0755 /tmp/.stryker-helper.sh; "
+                    + "nohup bash /tmp/.stryker-helper.sh > /tmp/.stryker-helper.log 2>&1 & "
+                    + "echo started");
+
+            long deadline = System.currentTimeMillis() + 10 * 60_000L;
+            while (System.currentTimeMillis() < deadline) {
+                if (helperMarkerPresent(engine)) {
+                    stage(p, Stage.DONE);
+                    log(p, 2, "Helper role applied");
+                    return true;
+                }
+                Thread.sleep(5000);
+            }
+            log(p, 3, "Helper role did not finish in time — check /tmp/.stryker-helper.log");
+            return false;
+        } catch (Exception e) {
+            Log.e(TAG, "helper provisioning failed", e);
+            log(p, 3, "Helper provisioning error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    private static boolean helperMarkerPresent(RootlessEngine engine) {
+        for (String l : engine.exec("cat " + HELPER_MARKER + " 2>/dev/null")) {
+            if (l != null && l.trim().equals("1")) return true;
+        }
+        return false;
+    }
+
     private static void copyAsset(AssetManager am, String assetPath, File dest, Progress p, String label)
             throws IOException {
         File tmp = new File(dest.getAbsolutePath() + ".tmp");

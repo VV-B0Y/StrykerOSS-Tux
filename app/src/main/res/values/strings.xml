@@ -1351,6 +1351,11 @@ Storage is only consumed as the guest writes, and space freed inside the VM is r
     <string name="vm_add_title">Add a VM</string>
     <string name="vm_add_clone">Clone existing VM</string>
     <string name="vm_add_new">New VM from template</string>
+    <string name="vm_add_helper">Helper server</string>
+    <string name="vm_helper_title">New helper VM</string>
+    <string name="vm_progress_helper">Setting up helper VM…</string>
+    <string name="vm_helper_done">Helper VM ready</string>
+    <string name="vm_helper_failed">Helper setup failed</string>
     <string name="vm_clone_title">Clone VM</string>
     <string name="vm_new_title">New VM</string>
     <string name="vm_source_label">Source VM</string>

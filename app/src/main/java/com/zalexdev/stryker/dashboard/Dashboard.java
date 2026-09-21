@@ -895,9 +895,11 @@ public class Dashboard extends Fragment {
                 .setTitle(R.string.vm_add_title)
                 .setItems(new String[]{
                         getString(R.string.vm_add_clone),
+                        getString(R.string.vm_add_helper),
                         getString(R.string.vm_add_new)
                 }, (d, which) -> {
                     if (which == 0) showCloneDialog(defaultSourceId);
+                    else if (which == 1) showHelperDialog();
                     else showNewVmDialog();
                 })
                 .show();
@@ -985,6 +987,64 @@ public class Dashboard extends Fragment {
                 .setPositiveButton(android.R.string.ok, (d, w) ->
                         startNewVm(nameInput.getText().toString().trim()))
                 .show();
+    }
+
+    private void showHelperDialog() {
+        LinearLayout form = new LinearLayout(context);
+        form.setOrientation(LinearLayout.VERTICAL);
+        int pad = Math.round(16f * getResources().getDisplayMetrics().density);
+        form.setPadding(pad, pad, pad, pad);
+
+        final EditText nameInput = new EditText(context);
+        nameInput.setHint(R.string.vm_name_hint);
+        nameInput.setSingleLine(true);
+        form.addView(nameInput);
+
+        new MaterialAlertDialogBuilder(context)
+                .setTitle(R.string.vm_helper_title)
+                .setView(form)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(android.R.string.ok, (d, w) ->
+                        startHelper(nameInput.getText().toString().trim()))
+                .show();
+    }
+
+    private void startHelper(final String name) {
+        final VmRegistry.VmInfo info;
+        try {
+            info = VmRegistry.get(context).clone("vm0", name, 0);
+        } catch (Exception e) {
+            core.toaster(getString(R.string.vm_error_clone) + ": " + e.getMessage());
+            return;
+        }
+        showProgress(getString(R.string.vm_progress_helper));
+        final String id = info.id;
+        new Thread(() -> {
+            final boolean ok = QemuInstaller.provisionHelper(context, id, new QemuInstaller.Progress() {
+                @Override public void onStage(QemuInstaller.Stage stage) {
+                    updateProgress(stage.title);
+                }
+                @Override public void onBytes(String label, long done) {
+                    updateProgress(label + " · " + VmSpecs.humanBytes(done));
+                }
+                @Override public void onLog(int level, String message) {
+                    updateProgress(message);
+                }
+            });
+            Activity host = activity;
+            if (host == null) return;
+            host.runOnUiThread(() -> {
+                dismissProgress();
+                if (ok) {
+                    renderVmCards();
+                    core.toaster(getString(R.string.vm_helper_done));
+                } else {
+                    VmRegistry.get(context).remove(id, true);
+                    renderVmCards();
+                    core.toaster(getString(R.string.vm_helper_failed));
+                }
+            });
+        }, "vm-helper").start();
     }
 
     private void startClone(final String srcId, final String name, final long sizeBytes) {
