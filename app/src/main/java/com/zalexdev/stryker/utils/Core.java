@@ -1091,6 +1091,39 @@ public class Core {
         return pumpProcess(generateSuProcess(), terminated(command) + "exit\nexit\n",
                 true, tool, false, idleLimitMs);
     }
+
+    /** Run a command via `su -c` (single exec, no stdin pump). Some nl80211/kernel operations
+     *  (e.g. `iw dev wlan0 scan`) get aborted ("scan aborted!") when run through Magisk su's
+     *  stdin shell, so the internal-chip bridge uses this instead of customCommand. */
+    public ArrayList<String> customCommandSuC(String command){
+        ArrayList<String> result = new ArrayList<>();
+        try {
+            Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", command});
+            Thread errThread = new Thread(() -> {
+                try (BufferedReader br = new BufferedReader(
+                        new InputStreamReader(p.getErrorStream()))) {
+                    String l;
+                    while ((l = br.readLine()) != null) {
+                        synchronized (result) { result.add(l); }
+                    }
+                } catch (IOException ignored) {}
+            }, "stryker-su-c-stderr");
+            errThread.setDaemon(true);
+            errThread.start();
+            try (BufferedReader br = new BufferedReader(
+                    new InputStreamReader(p.getInputStream()))) {
+                String l;
+                while ((l = br.readLine()) != null) {
+                    synchronized (result) { result.add(l); }
+                }
+            }
+            p.waitFor();
+            errThread.join(2000);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return result;
+    }
     public void threadCommand(String cmd){new Thread(() -> customCommand(cmd)).start();}
 
     public void threadChrootCommand(String cmd){new Thread(() -> customChrootCommand(cmd)).start();}

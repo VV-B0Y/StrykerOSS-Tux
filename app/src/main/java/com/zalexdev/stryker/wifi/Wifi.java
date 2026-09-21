@@ -379,13 +379,14 @@ public class Wifi extends Fragment {
             log.writeLine("Internal chip: passive capture via chroot airodump-ng…", 1, "wifi");
             try {
                 bridge.start();
-                String csv = core.getShareRoot() + "/captured/bridge/cap-01.csv";
+                String csvPath = bridge.rawDir + "/cap-01.csv";
+                ArrayList<String> csvLines = new ArrayList<>();
                 for (int i = 0; i < 24 && alive.get(); i++) {
-                    java.io.File f = new java.io.File(csv);
-                    if (f.exists() && f.length() > 0) break;
+                    csvLines = core.customCommand("cat " + csvPath + " 2>/dev/null", true);
+                    if (!csvLines.isEmpty()) break;
                     try { Thread.sleep(500); } catch (InterruptedException ignored) {}
                 }
-                ArrayList<WiFINetwork> nets = parseAirodumpCsv(csv);
+                ArrayList<WiFINetwork> nets = parseAirodumpCsv(csvLines);
                 if (nets == null) nets = new ArrayList<>();
                 log.writeLine("Internal chip (airodump) scan: " + nets.size() + " networks", 2, "wifi");
                 return nets;
@@ -403,33 +404,28 @@ public class Wifi extends Fragment {
     }
 
     /** Parse an airodump-ng --output-format csv AP list into WiFINetwork entries. */
-    private ArrayList<WiFINetwork> parseAirodumpCsv(String path) {
+    private ArrayList<WiFINetwork> parseAirodumpCsv(ArrayList<String> lines) {
         ArrayList<WiFINetwork> nets = new ArrayList<>();
-        try (BufferedReader br = new BufferedReader(new FileReader(path))) {
-            String line;
-            boolean inApSection = false;
-            while ((line = br.readLine()) != null) {
-                String t = line.trim();
-                if (t.startsWith("BSSID")) { inApSection = true; continue; }
-                if (t.startsWith("Station MAC")) break;
-                if (!inApSection || t.isEmpty()) continue;
-                String[] c = line.split(",");
-                if (c.length < 14) continue;
-                String bssid = c[0].trim();
-                if (bssid.isEmpty() || !bssid.matches("([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")) continue;
-                WiFINetwork w = new WiFINetwork();
-                w.setMac(bssid);
-                String vendor = core.getVendorByMacFromDB(bssid);
-                w.setVendor(vendor == null || vendor.isEmpty() ? "Unknown" : vendor);
-                try { w.setChannel(Integer.parseInt(c[3].trim())); } catch (Exception ignored) {}
-                try { w.setPower(Integer.parseInt(c[8].trim())); } catch (Exception ignored) {}
-                String ssid = c[13].trim();
-                w.setSsid(ssid.isEmpty() ? "Hidden network" : ssid);
-                if (w.getChannel() > 14) w.setIs5hhz(true);
-                nets.add(w);
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
+        boolean inApSection = false;
+        for (String line : lines) {
+            String t = line.trim();
+            if (t.startsWith("BSSID")) { inApSection = true; continue; }
+            if (t.startsWith("Station MAC")) break;
+            if (!inApSection || t.isEmpty()) continue;
+            String[] c = line.split(",");
+            if (c.length < 14) continue;
+            String bssid = c[0].trim();
+            if (bssid.isEmpty() || !bssid.matches("([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")) continue;
+            WiFINetwork w = new WiFINetwork();
+            w.setMac(bssid);
+            String vendor = core.getVendorByMacFromDB(bssid);
+            w.setVendor(vendor == null || vendor.isEmpty() ? "Unknown" : vendor);
+            try { w.setChannel(Integer.parseInt(c[3].trim())); } catch (Exception ignored) {}
+            try { w.setPower(Integer.parseInt(c[8].trim())); } catch (Exception ignored) {}
+            String ssid = c[13].trim();
+            w.setSsid(ssid.isEmpty() ? "Hidden network" : ssid);
+            if (w.getChannel() > 14) w.setIs5hhz(true);
+            nets.add(w);
         }
         return nets;
     }
@@ -1177,13 +1173,23 @@ public class Wifi extends Fragment {
     /** Capture raw packets on the internal chip (bridge) and save to a .cap/.pcap file. */
     public void runCapture() {
         if (context == null) return;
-        if (!Core.WIFI_INTERNAL.equals(wlan) && !Core.WIFI_INTERNAL_HOST.equals(wlan)) {
-            core.toaster("Select the internal WiFi interface first");
-            return;
+        final boolean rootless = core.isRootless();
+        final boolean useAirodump;
+        if (rootless) {
+            if (!Core.WIFI_INTERNAL.equals(wlan) && !Core.WIFI_INTERNAL_HOST.equals(wlan)) {
+                core.toaster("Select the internal WiFi interface first");
+                return;
+            }
+            useAirodump = Core.WIFI_INTERNAL.equals(wlan);
+        } else {
+            // Chroot mode: the internal chip is wlan0; capture with chroot airodump-ng.
+            useAirodump = true;
         }
-        final boolean useAirodump = Core.WIFI_INTERNAL.equals(wlan);
         final com.zalexdev.stryker.engine.HostCaptureBridge bridge =
                 new com.zalexdev.stryker.engine.HostCaptureBridge(core);
+        final String capFile = bridge.rawDir
+                + (useAirodump ? "/cap-01.cap" : "/cap.pcap");
+
         final Dialog dialog = new Dialog(context);
         dialog.setContentView(R.layout.wifi_dialog_hs);
         Window window = dialog.getWindow();
@@ -1201,29 +1207,42 @@ public class Wifi extends Fragment {
         if (info != null) info.setVisibility(View.GONE);
         outputtext.setMovementMethod(new ScrollingMovementMethod());
         outputtext.setText("Starting capture on internal chip...\n");
+
+        final boolean[] capturing = {false};
         new Thread(() -> {
             boolean ok = useAirodump ? bridge.start() : bridge.startHostCapture();
-            safeUi(() -> outputtext.append(ok ? "Capturing... tap Stop to save.\n" : "Failed to start capture.\n"));
+            capturing[0] = ok;
+            safeUi(() -> outputtext.setText(ok ? "Capturing...\n" : "Failed to start capture.\n"));
+        }).start();
+
+        // Live counter: packets captured + bytes on disk.
+        new Thread(() -> {
+            while (alive.get()) {
+                if (!capturing[0]) {
+                    try { Thread.sleep(400); } catch (InterruptedException e) { break; }
+                    continue;
+                }
+                final int pkts = bridge.packetCount(capFile);
+                final long bytes = bridge.fileSize(capFile);
+                final String status = "Capturing on internal chip...\n\n"
+                        + "Packets captured: " + (pkts >= 0 ? String.valueOf(pkts) : "...") + "\n"
+                        + "Packets sent: 0 (passive)\n"
+                        + "Size: " + (bytes >= 0 ? formatSize(bytes) : "...");
+                safeUi(() -> outputtext.setText(status));
+                try { Thread.sleep(1000); } catch (InterruptedException e) { break; }
+            }
         }).start();
 
         stop.setOnClickListener(v -> new Thread(() -> {
+            capturing[0] = false;
             bridge.stop();
-            String bridgeDir = core.getShareRoot() + "/captured/bridge";
-            java.io.File src = null;
-            java.io.File[] caps = new java.io.File(bridgeDir)
-                    .listFiles((d, n) -> n.endsWith(".cap") || n.endsWith(".pcap"));
-            if (caps != null) {
-                for (java.io.File f : caps) {
-                    if (f.length() > 0 && (src == null || f.lastModified() > src.lastModified())) src = f;
-                }
-            }
+            // Let airodump flush its output file before we move it.
+            try { Thread.sleep(600); } catch (InterruptedException ignored) {}
             String strDate = new SimpleDateFormat("dd-MM_HH-mm", Locale.ENGLISH).format(new Date());
-            String dest = core.getShareRoot() + "/captured/Internal_" + strDate + ".cap";
+            String destShow = core.getShareRoot() + "/captured/Internal_" + strDate + ".cap";
             boolean saved = false;
-            if (src != null) {
-                new java.io.File(core.getShareRoot() + "/captured").mkdirs();
-                core.moveFile(src.getAbsolutePath(), dest);
-                saved = new java.io.File(dest).isFile();
+            if (bridge.fileSize(capFile) > 0) {
+                saved = bridge.save("Internal_" + strDate + ".cap");
             }
             final boolean ok = saved;
             safeUi(() -> {
@@ -1231,10 +1250,16 @@ public class Wifi extends Fragment {
                 dialog.setCancelable(true);
                 outputtext.setVisibility(View.GONE);
                 resulttext.setVisibility(View.VISIBLE);
-                resulttext.setText(ok ? "Saved to:\n" + dest : "No packets captured.");
+                resulttext.setText(ok ? "Saved to:\n" + destShow : "No packets captured.");
             });
         }).start());
         dialog.show();
+    }
+
+    private static String formatSize(long b) {
+        if (b < 1024) return b + " B";
+        if (b < 1024 * 1024) return String.format(Locale.ENGLISH, "%.1f KB", b / 1024.0);
+        return String.format(Locale.ENGLISH, "%.2f MB", b / (1024.0 * 1024.0));
     }
 
     private static java.io.File newestCapture(String dir, String prefix) {

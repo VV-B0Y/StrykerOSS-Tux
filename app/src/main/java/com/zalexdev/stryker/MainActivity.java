@@ -77,6 +77,7 @@ public class MainActivity extends AppCompatActivity {
     private static TextView logo;
     private static ImageView menu;
     private static ImageView settings;
+    private static android.widget.TextView engineBadge;
     private static int lastSelectedItemId = 0;
     private Core core;
     private static FragmentManager fragmentManager;
@@ -146,6 +147,7 @@ public class MainActivity extends AppCompatActivity {
         DrawerLayout drawer = findViewById(R.id.drawerLayout);
 
         logo = findViewById(R.id.stryker_main_logo);
+        engineBadge = findViewById(R.id.drawer_engine_badge);
         menu = findViewById(R.id.menu_img);
         menu.setOnClickListener(view -> {
             if (core != null) {
@@ -321,6 +323,25 @@ public class MainActivity extends AppCompatActivity {
     private void updateBanner(boolean chosen, boolean rootless) {
         if (logo != null) {
             logo.setText(chosen ? ("StrykerOSS " + (rootless ? "VIRT" : "ROOT")) : "StrykerOSS");
+        }
+        if (engineBadge != null) {
+            String label;
+            int color;
+            if (!chosen) {
+                label = "NONE";
+                color = 0xFF757575;
+            } else if (rootless) {
+                label = "ROOTLESS";
+                color = 0xFF1565C0;
+            } else {
+                label = "ROOT";
+                color = 0xFF2E7D32;
+            }
+            engineBadge.setText(label);
+            try {
+                engineBadge.setBackgroundTintList(
+                        android.content.res.ColorStateList.valueOf(color));
+            } catch (Exception ignored) {}
         }
     }
 
