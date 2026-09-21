@@ -525,13 +525,15 @@ class NeoTermActivity : AppCompatActivity(), ServiceConnection, SharedPreference
     val viewClient = TermViewClient(this)
 
     val rootless = java.io.File(filesDir, "rootless/vms/vm0/.active").exists()
+    val label = if (rootless) com.stryker.terminal.ui.other.SuUtils.vmName() else "chroot"
+    val titleCmd = "printf '\u001b]0;" + label + "\u0007'; "
     val parameter = ShellParameter().callback(sessionCallback)
     if (rootless) {
-      parameter.executablePath("pty:127.0.0.1:1051")
+      parameter.executablePath("pty:127.0.0.1:1051").initialCommand(titleCmd)
     } else {
       parameter
         .executablePath("${NeoTermPath.BIN_PATH}/stryker-ch")
-        .initialCommand("clear")
+        .initialCommand(titleCmd + "clear")
     }
     val session = termService!!.createTermSession(parameter)
 
