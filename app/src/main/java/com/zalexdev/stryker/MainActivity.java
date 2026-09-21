@@ -174,6 +174,7 @@ public class MainActivity extends AppCompatActivity {
         if (arch != null) arch.setText("arm64");
         engineStatusView = navView;
         engineStatusDrawer = drawer;
+        setupEngineDropdown(navView);
         drawer.addDrawerListener(new DrawerLayout.SimpleDrawerListener() {
             @Override
             public void onDrawerOpened(View drawerView) {
@@ -205,6 +206,7 @@ public class MainActivity extends AppCompatActivity {
             vmReady = false;
             rootAvailable = false;
             chrootMounted = false;
+            updateBanner(false, false);
             if (chrootStatus != null) chrootStatus.setText(R.string.engine_not_chosen);
             if (statusDot != null) {
                 try {
@@ -229,6 +231,7 @@ public class MainActivity extends AppCompatActivity {
                 rootlessEngine = fRootless;
                 rootAvailable = fRootOk;
                 chrootMounted = fMounted;
+                updateBanner(true, fRootless);
                 if (chrootStatus != null) chrootStatus.setText(es.label);
                 if (statusDot != null) {
                     try {
@@ -312,6 +315,73 @@ public class MainActivity extends AppCompatActivity {
             }
         }
         if (lastSelectedItemId != 0) receiver.changeFragmentQuiet(lastSelectedItemId);
+    }
+
+    /** Reflects the active engine on the top banner: "StrykerOSS VIRT" or "StrykerOSS ROOT". */
+    private void updateBanner(boolean chosen, boolean rootless) {
+        if (logo != null) {
+            logo.setText(chosen ? ("StrykerOSS " + (rootless ? "VIRT" : "ROOT")) : "StrykerOSS");
+        }
+    }
+
+    /** Drawer dropdown to switch the active engine (chroot vs rootless VM). */
+    private void setupEngineDropdown(View navView) {
+        final android.widget.Spinner spinner = navView.findViewById(R.id.drawer_engine_spinner);
+        if (spinner == null || core == null) return;
+
+        new Thread(() -> {
+            final boolean chrootOk = com.zalexdev.stryker.engine.EngineType.chrootAvailable(core);
+            final boolean vmOk = com.zalexdev.stryker.engine.EngineType.rootlessAvailable(core);
+
+            final java.util.List<String> labels = new java.util.ArrayList<>();
+            final java.util.List<com.zalexdev.stryker.engine.EngineType> types = new java.util.ArrayList<>();
+            if (chrootOk) { labels.add("Chroot (root)"); types.add(com.zalexdev.stryker.engine.EngineType.CHROOT); }
+            if (vmOk) { labels.add("Rootless VM"); types.add(com.zalexdev.stryker.engine.EngineType.ROOTLESS); }
+
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                if (labels.isEmpty()) {
+                    spinner.setVisibility(View.GONE);
+                    return;
+                }
+                spinner.setVisibility(View.VISIBLE);
+                android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(
+                        this, android.R.layout.simple_spinner_item, labels);
+                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+                spinner.setAdapter(adapter);
+
+                com.zalexdev.stryker.engine.EngineType active =
+                        com.zalexdev.stryker.engine.EngineType.active(core);
+                int idx = types.indexOf(active);
+                spinner.setSelection(idx < 0 ? 0 : idx, false);
+
+                spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+                    @Override
+                    public void onItemSelected(android.widget.AdapterView<?> parent,
+                                               android.view.View view, int position, long id) {
+                        if (position < 0 || position >= types.size()) return;
+                        com.zalexdev.stryker.engine.EngineType chosen = types.get(position);
+                        if (chosen == com.zalexdev.stryker.engine.EngineType.active(core)) return;
+                        com.zalexdev.stryker.engine.EngineType.persist(core, chosen);
+                        updateBanner(true, chosen == com.zalexdev.stryker.engine.EngineType.ROOTLESS);
+                        if (chosen == com.zalexdev.stryker.engine.EngineType.ROOTLESS) {
+                            com.zalexdev.stryker.engine.RootlessService.start(getApplicationContext());
+                            refreshEngineStatus();
+                        } else {
+                            new Thread(() -> {
+                                if (!core.isMounted()) core.mountCore();
+                                runOnUiThread(() -> refreshEngineStatus());
+                            }, "stryker-chroot-ondemand").start();
+                        }
+                        wireDrawerRows(navView, engineStatusDrawer);
+                        core.toaster("Active engine: " + labels.get(position));
+                    }
+
+                    @Override
+                    public void onNothingSelected(android.widget.AdapterView<?> parent) {}
+                });
+            });
+        }, "drawer-engine-dropdown").start();
     }
 
     public MetasploitUtils getMetasploitUtils() {
