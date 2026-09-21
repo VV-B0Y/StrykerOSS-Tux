@@ -101,32 +101,43 @@ public final class GuestExec {
     }
 
     public ArrayList<String> exec(String command) {
-        ArrayList<String> out = new ArrayList<>();
-        Session s = null;
-        try {
-            s = session(command);
-            s.socket.setSoTimeout(READ_TIMEOUT_MS);
-            String line;
-            while ((line = s.reader.readLine()) != null) {
-                if (line.startsWith(EXIT_SENTINEL)) {
-                    try { s.exitCode = Integer.parseInt(line.substring(EXIT_SENTINEL.length()).trim()); }
-                    catch (NumberFormatException ignored) {}
-                    break;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            ArrayList<String> out = new ArrayList<>();
+            Session s = null;
+            try {
+                s = session(command);
+                s.socket.setSoTimeout(READ_TIMEOUT_MS);
+                String line;
+                while ((line = s.reader.readLine()) != null) {
+                    if (line.startsWith(EXIT_SENTINEL)) {
+                        try { s.exitCode = Integer.parseInt(line.substring(EXIT_SENTINEL.length()).trim()); }
+                        catch (NumberFormatException ignored) {}
+                        break;
+                    }
+                    out.add(line);
                 }
-                out.add(line);
+                return out;
+            } catch (java.net.SocketTimeoutException te) {
+                Log.w(TAG, "run timed out: " + shortCmd(command));
+                logToStore("guest command timed out after " + (READ_TIMEOUT_MS / 1000)
+                        + "s with no output (hung?) · " + shortCmd(command));
+                return out;
+            } catch (IOException e) {
+                // A "Socket closed" here is usually a transient drop in the socat-forked shell,
+                // not the agent dying — retry a couple of times before giving up.
+                if (attempt < 2) {
+                    try { Thread.sleep(250); } catch (InterruptedException ie) { break; }
+                    continue;
+                }
+                Log.w(TAG, "run failed: " + e.getMessage());
+                logToStore("guest exec failed — VM not reachable on :" + hostPort
+                        + " (" + e.getMessage() + ") · " + shortCmd(command));
+                return out;
+            } finally {
+                if (s != null) s.close();
             }
-        } catch (java.net.SocketTimeoutException te) {
-            Log.w(TAG, "run timed out: " + shortCmd(command));
-            logToStore("guest command timed out after " + (READ_TIMEOUT_MS / 1000)
-                    + "s with no output (hung?) · " + shortCmd(command));
-        } catch (IOException e) {
-            Log.w(TAG, "run failed: " + e.getMessage());
-            logToStore("guest exec failed — VM not reachable on :" + hostPort
-                    + " (" + e.getMessage() + ") · " + shortCmd(command));
-        } finally {
-            if (s != null) s.close();
         }
-        return out;
+        return new ArrayList<>();
     }
 
     static void logToStore(String msg) {
