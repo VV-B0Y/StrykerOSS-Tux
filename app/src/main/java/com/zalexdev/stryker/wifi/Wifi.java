@@ -391,12 +391,15 @@ public class Wifi extends Fragment {
                 bridge.start();
                 String csvPath = bridge.rawDir + "/cap-01.csv";
                 ArrayList<String> csvLines = new ArrayList<>();
+                ArrayList<WiFINetwork> nets = new ArrayList<>();
                 for (int i = 0; i < 24 && alive.get(); i++) {
                     csvLines = core.customCommandSuC("cat " + csvPath + " 2>/dev/null");
-                    if (!csvLines.isEmpty()) break;
+                    nets = parseAirodumpCsv(csvLines);
+                    // Break only once airodump has captured real AP rows — a freshly created CSV
+                    // is just the header line (0 APs), which would otherwise end the scan early.
+                    if (!nets.isEmpty()) break;
                     try { Thread.sleep(500); } catch (InterruptedException ignored) {}
                 }
-                ArrayList<WiFINetwork> nets = parseAirodumpCsv(csvLines);
                 if (nets == null) nets = new ArrayList<>();
                 log.writeLine("Internal chip (airodump) scan: " + nets.size() + " networks", 2, "wifi");
                 return nets;
