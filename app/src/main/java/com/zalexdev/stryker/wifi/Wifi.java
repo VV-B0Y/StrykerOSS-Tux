@@ -872,7 +872,7 @@ public class Wifi extends Fragment {
                 capIface = core.getHSInterface();
                 core.customChrootCommand("mkdir -p /sdcard/Stryker/hs /sdcard/Stryker/captured; "
                         + "rm -f /sdcard/Stryker/hs/handshakenow*");
-                String cmd = "airodump-ng " + capIface + " -w /sdcard/Stryker/hs/handshakenow --ignore-negative-one --output-format pcap,csv  --update 3";
+                String cmd = "stdbuf -oL airodump-ng " + capIface + " -w /sdcard/Stryker/hs/handshakenow --ignore-negative-one --output-format pcap,csv --band bg --update 3";
                 airodump = new AdvancedProcess(activity, context, cmd, true) {
                     @Override
                     public void onFinished(ArrayList<String> outputList) {
@@ -1021,7 +1021,7 @@ public class Wifi extends Fragment {
                     core.monitorManager.enableMonitorMode(deauthIface);
                     deauthIface = core.getDeauthInterface();
                 }
-                mdk4 = new AdvancedProcess(activity, context, "mdk4 " + deauthIface + " d", true) {
+                mdk4 = new AdvancedProcess(activity, context, "stdbuf -oL mdk4 " + deauthIface + " d", true) {
                     @Override
                     public void onFinished(ArrayList<String> outputList) {
                         core.toaster("Mdk4 stopped");
@@ -1118,7 +1118,7 @@ public class Wifi extends Fragment {
             final String requestedIface = core.getDeauthInterface();
             safeUi(() -> outputtext.append("Interface: " + requestedIface + "\n"));
             if (core.monitorManager.enableMonitorMode(requestedIface)) {
-                mdk4 = new AdvancedProcess(activity, context, "mdk4 " + core.getDeauthInterface() + " d", true) {
+                mdk4 = new AdvancedProcess(activity, context, "stdbuf -oL mdk4 " + core.getDeauthInterface() + " d", true) {
 
                     @Override
                     protected void onPrepare() {
