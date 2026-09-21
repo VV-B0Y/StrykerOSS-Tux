@@ -50,10 +50,9 @@ it at the same time; existing passthrough machinery).
 3. Evil-twin automation — scan → clone SSID → deauth → capture, wired to the app.
 4. App UI — start/stop, target picker, handshake + portal-hit counters.
 
-## Open decisions
+## Decisions (locked)
 
-1. Evil twin (clone a specific target SSID) vs. lure AP (fake "Free_WiFi") — or both?
-2. Captive portal content: generic "sign in to continue" credential-capture page, or a specific
-   phishing template?
-3. Should the AP offer internet egress (a "working" lure that routes after login, via the helper's
-   Tor), or be capture-only (clients connect, handshake, no internet)?
+1. AP modes: **both** evil twin (clone a target SSID) and lure (fake "Free_WiFi").
+2. Captive portal: **generic credential-capture page** (email/password), posted + logged to the
+   helper.
+3. Internet egress: **capture-only first**; a "working" lure (routes via helper/Tor) comes later.
