@@ -211,6 +211,9 @@ public class Wifi extends Fragment {
                 // capture process alive, restore a clean radio state before scanning.
                 com.zalexdev.stryker.logger.Logger scanLog = new com.zalexdev.stryker.logger.Logger();
                 scanLog.writeLine("scan(): mode=" + (core.isRootless() ? "rootless" : "chroot") + " wlan=" + wlan, 1, "wifi");
+                // Reset the result so the routing gates below (which test `list == null`) actually
+                // fire — `list` is a field initialized to an empty list and is otherwise never null.
+                list = null;
                 com.zalexdev.stryker.engine.HostCaptureBridge.ensureManaged(core);
                 if (Core.WIFI_INTERNAL.equals(wlan) || Core.WIFI_INTERNAL_HOST.equals(wlan)) {
                     if (core.isRootless()) {
@@ -327,6 +330,7 @@ public class Wifi extends Fragment {
                 }
 
                 if (activity == null || !alive.get()) return;
+                if (list == null) list = new ArrayList<>();
                 if (list.isEmpty() && core.isRootless()) {
                     new com.zalexdev.stryker.logger.Logger().writeLine(
                             "Scan returned 0 networks — guest state:", 3, "wifi");
