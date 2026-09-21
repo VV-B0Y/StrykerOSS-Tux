@@ -32,6 +32,11 @@ if command -v systemctl >/dev/null 2>&1; then
     systemctl set-default multi-user.target 2>/dev/null || true
     systemctl disable lightdm gdm3 gdm sddm 2>/dev/null || true
     systemctl mask lightdm gdm3 gdm sddm 2>/dev/null || true
+
+# Silence systemd-ssh-generator: it retries SSH-over-vsock every few seconds, which this
+# VM does not provide, spamming the console with harmless "AF_VSOCK CID" errors.
+systemctl mask systemd-ssh-generator.service systemd-ssh-generator.socket 2>/dev/null || true
+rm -f /usr/lib/systemd/system-generators/systemd-ssh-generator 2>/dev/null || true
 fi
 
 # --- KEEP the Realtek driver intact. We do NOT remove it; we only verify it is still

@@ -372,12 +372,42 @@ public class Dashboard extends Fragment {
     @SuppressLint("SetTextI18n")
     private void refreshVmStatus(VmCard c) {
         if (c == null || c.engine == null || c.badge == null) return;
-        RootlessEngine.State st = c.engine.status();
+
+        if (c.specs != null) {
+            int cpus = VmSpecs.effectiveCpus(context, core, c.info.index);
+            int ram = VmSpecs.effectiveRamMb(context, core, c.info.index);
+            long diskBytes = RootlessPaths.rootfs(context, c.info.id).length();
+            String disk = VmSpecs.humanBytes(diskBytes);
+            boolean kvm = VmSpecs.kvmAvailable();
+            c.specs.setText(cpus + " vCPU · " + ram + " MB · " + disk + " disk · " + (kvm ? "KVM" : "TCG"));
+        }
+
+        // Apply the non-blocking status immediately, then refresh it with a real ping.
+        // Non-blocking status() reads lastGuestOk, which goes stale 15s after the last ping —
+        // and only the primary card is sampled — so a running secondary VM would otherwise
+        // read "Booting" forever.
+        applyVmStatus(c, c.engine.status());
+        final RootlessEngine engine = c.engine;
+        final VmCard card = c;
+        final ExecutorService exec = vmStatsExec;
+        if (exec == null || exec.isShutdown()) return;
+        try {
+            exec.execute(() -> {
+                RootlessEngine.State st = engine.statusBlocking();
+                Activity host = activity;
+                if (host == null) return;
+                host.runOnUiThread(() -> applyVmStatus(card, st));
+            });
+        } catch (RejectedExecutionException ignored) {}
+    }
+
+    private void applyVmStatus(VmCard c, RootlessEngine.State st) {
+        if (c == null || c.badge == null) return;
         String badge;
         int color, ring;
         switch (st) {
             case READY: {
-                String prompt = c.engine.guestPrompt();
+                String prompt = c.engine == null ? null : c.engine.guestPrompt();
                 badge = prompt == null || prompt.isEmpty() ? "Ready" : "Ready · " + prompt;
                 color = R.color.green;
                 ring = VmRingView.STATE_READY;
@@ -399,15 +429,6 @@ public class Dashboard extends Fragment {
         try {
             c.badge.setTextColor(androidx.core.content.ContextCompat.getColor(context, color));
         } catch (Exception ignored) {}
-
-        if (c.specs != null) {
-            int cpus = VmSpecs.effectiveCpus(context, core, c.info.index);
-            int ram = VmSpecs.effectiveRamMb(context, core, c.info.index);
-            long diskBytes = RootlessPaths.rootfs(context, c.info.id).length();
-            String disk = VmSpecs.humanBytes(diskBytes);
-            boolean kvm = VmSpecs.kvmAvailable();
-            c.specs.setText(cpus + " vCPU · " + ram + " MB · " + disk + " disk · " + (kvm ? "KVM" : "TCG"));
-        }
     }
 
     private void refreshAllVmStatus() {
