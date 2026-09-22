@@ -203,10 +203,10 @@ public class Slide3 extends Fragment {
                         log(LogLevel.WARN, "Stryker payload did not verify — /CORE tools may be missing");
                     }
                     core.deleteFile("/sdcard/Stryker/exploits/");
-                    core.copyFile("/data/data/com.zalexdev.stryker/files/checker.py",
+                    core.copyFile(core.context.getFilesDir().getAbsolutePath() + "/checker.py",
                             "/data/local/stryker/release/exploits/checker.py");
                     core.copyFile("/data/local/stryker/release/exploits/", "/sdcard/Stryker/exploits");
-                    core.chmodFolder("/data/data/com.zalexdev.stryker/files");
+                    core.chmodFolder(core.context.getFilesDir().getAbsolutePath());
                     markStage(InstallStage.DEPLOYING_EXPLOITS, RowState.DONE);
                     log(LogLevel.SUCCESS, "Exploits deployed to /sdcard/Stryker/exploits");
 
@@ -346,7 +346,7 @@ public class Slide3 extends Fragment {
 
     @SuppressLint("SdCardPath")
     private boolean clear() {
-        core.chmodFolder("/data/data/com.zalexdev.stryker/files/");
+        core.chmodFolder(core.context.getFilesDir().getAbsolutePath() + "/");
         core.createFolder(core.getStorage() + "/Stryker/");
         core.createFolder("/data/local/stryker");
         // Any live mount under the chroot root counts, not just a fully assembled one: a chroot

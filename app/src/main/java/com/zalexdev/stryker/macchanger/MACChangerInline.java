@@ -64,7 +64,7 @@ public class MACChangerInline extends AppCompatActivity {
         new_mac.setText(mac);
         String finalMac = mac.toString();
         if (Build.VERSION.SDK_INT != Build.VERSION_CODES.R) {
-            new AdvancedProcess(this, this, "/data/data/com.zalexdev.stryker/files/changemac "
+            new AdvancedProcess(this, this, getFilesDir().getAbsolutePath() + "/changemac "
                     + iface
                     + " "
                     + finalMac, false) {

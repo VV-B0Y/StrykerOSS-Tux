@@ -95,7 +95,7 @@ public class Core {
     public final static String EXECUTE = "/data/data/com.zalexdev.stryker/files/chroot_exec ";
     public final static String BUSYBOX = "/data/data/com.zalexdev.stryker/files/busybox ";
     public final static String SHELL = "bash";
-    public final static String CHROOT_ROOT = "/data/local/stryker/release";
+    public final static String CHROOT_ROOT = "/data/local/stryker-tux/release";
 
     /** Sentinel interface name meaning "use the phone's internal Wi-Fi chip". In rootless mode
      *  this routes the scan through the host airodump-ng bridge (HostCaptureBridge); in chroot
@@ -706,7 +706,7 @@ public class Core {
 
     }
     public Boolean mountCore(){
-        customMegaCommand("/data/data/com.zalexdev.stryker/files/bootroot");
+        customMegaCommand(context.getFilesDir().getAbsolutePath() + "/bootroot");
         boolean mounted = isMounted();
         if (mounted) {
             try { GuestCore.ensure(this); } catch (Throwable ignored) {}
@@ -817,7 +817,7 @@ public class Core {
 
     /** Runs killroot and reports whether the chroot is genuinely detached afterwards. */
     public Boolean unmountCore(){
-        customMegaCommand("/data/data/com.zalexdev.stryker/files/killroot");
+        customMegaCommand(context.getFilesDir().getAbsolutePath() + "/killroot");
         return mountTableReadable() && mountsUnder(CHROOT_ROOT).isEmpty();
     }
     /** True when the chroot is fully assembled and usable — not a safety check, see mountsUnder. */
@@ -953,10 +953,10 @@ public class Core {
     public boolean checkMagiskNotification(){
         reCreateProcess();
         if (!getBoolean("offed")){
-        String cmd = "/data/data/com.zalexdev.stryker/files/sqlite3 /data/adb/magisk.db \"SELECT notification FROM policies WHERE package_name='com.zalexdev.stryker';\"";
+        String cmd = context.getFilesDir().getAbsolutePath() + "/sqlite3 /data/adb/magisk.db \"SELECT notification FROM policies WHERE package_name='com.strykeross.tux';\"";
         boolean b = Core.contains(customCommand(cmd),"1");
         if (!b) {
-            cmd = "/data/data/com.zalexdev.stryker/files/sqlite3 /data/adb/magisk.db \"SELECT notification FROM policies WHERE uid='"+android.os.Process.myUid()+"';\"";
+            cmd = context.getFilesDir().getAbsolutePath() + "/sqlite3 /data/adb/magisk.db \"SELECT notification FROM policies WHERE uid='\"+android.os.Process.myUid()+\"'\";";
             b = Core.contains(customCommand(cmd),"1");
         }
         return b;}else{

@@ -7,7 +7,7 @@ android {
     compileSdk 33
 
     defaultConfig {
-        applicationId "com.zalexdev.stryker"
+        applicationId "com.strykeross.tux"
         minSdk 24
         targetSdk 28
         versionCode 650

@@ -140,7 +140,7 @@ public class MainActivity extends AppCompatActivity {
 
         new Thread(this::copyAssets).start();
         if (core.getBoolean("clean_after_update")) {
-            new Thread(() -> core.deleteFile("/data/data/com.zalexdev.stryker/files/Stryker.apk")).start();
+            new Thread(() -> core.deleteFile(getFilesDir().getAbsolutePath() + "/Stryker.apk")).start();
             core.remove("clean_after_update");
         }
 
@@ -885,7 +885,7 @@ public class MainActivity extends AppCompatActivity {
                 if (core != null && core.getBoolean("msf")) {
                     metasploitUtils = new MetasploitUtils(MainActivity.this, MainActivity.this);
                 }
-                if (core != null) core.chmodFolder("/data/data/com.zalexdev.stryker/files");
+                if (core != null) core.chmodFolder(getFilesDir().getAbsolutePath());
             }).start();
         }).start();
     }
@@ -925,7 +925,7 @@ public class MainActivity extends AppCompatActivity {
             OutputStream out = null;
             try {
                 in = assetManager.open(filename);
-                File outFile = new File("/data/data/com.zalexdev.stryker/files/", filename);
+                File outFile = new File(getFilesDir(), filename);
                 out = new FileOutputStream(outFile);
                 copyFile(in, out);
                 out.close();

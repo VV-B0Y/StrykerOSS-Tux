@@ -143,7 +143,7 @@ public class Slide2 extends Fragment {
                 core.putInt("night", 2);
                 core.putInt("threads", 100);
                 if (rooted) {
-                    core.chmodFolder("/data/data/com.zalexdev.stryker/files");
+                    core.chmodFolder(core.context.getFilesDir().getAbsolutePath());
                 }
 
                 uiSafe(() -> {
@@ -245,7 +245,7 @@ public class Slide2 extends Fragment {
             OutputStream out = null;
             try {
                 in = assetManager.open(filename, AssetManager.ACCESS_STREAMING);
-                @SuppressLint("SdCardPath") File outFile = new File("/data/data/com.zalexdev.stryker/files/", filename);
+                @SuppressLint("SdCardPath") File outFile = new File(core.context.getFilesDir(), filename);
                 out = new FileOutputStream(outFile);
                 copyFile(in, out);
                 out.flush();
@@ -258,8 +258,8 @@ public class Slide2 extends Fragment {
         }
         Core.extractBusybox(activity);
         if (!core.isRootless()) {
-            core.customCommand("dos2unix /data/data/com.zalexdev.stryker/files/*.sh", true);
-            core.customCommand("dos2unix /data/data/com.zalexdev.stryker/files/*root*", true);
+            core.customCommand("dos2unix " + core.context.getFilesDir().getAbsolutePath() + "/*.sh", true);
+            core.customCommand("dos2unix " + core.context.getFilesDir().getAbsolutePath() + "/*root*", true);
         }
     }
 

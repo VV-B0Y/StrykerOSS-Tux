@@ -357,7 +357,7 @@ public class MACChangerFragment extends Fragment {
 
     private void runChangemacScript(String iface, String mac) {
         new AdvancedProcess(activity, context,
-                "/data/data/com.zalexdev.stryker/files/changemac " + iface + " " + mac, false) {
+                context.getFilesDir().getAbsolutePath() + "/changemac " + iface + " " + mac, false) {
             @Override
             public void onFinished(ArrayList<String> outputList) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
