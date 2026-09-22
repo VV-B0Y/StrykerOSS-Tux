@@ -838,7 +838,7 @@ public class MainActivity extends AppCompatActivity {
 
             // A chroot marker without the toolset is a half-finished install — send it back
             // through the installer.
-            if (chrootInstalled && !core.checkFolder("/data/local/stryker/release/usr")) {
+            if (chrootInstalled && !core.checkFolder("/data/local/stryker-tux/release/usr")) {
                 launchRunning = false;
                 startActivity(new Intent(MainActivity.this, AppIntroActivity.class));
                 return;

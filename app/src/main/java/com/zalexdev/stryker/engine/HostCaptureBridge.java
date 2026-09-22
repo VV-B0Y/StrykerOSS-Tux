@@ -37,7 +37,7 @@ public class HostCaptureBridge {
     /** Chroot path that is bind-mounted onto rawDir. */
     public static final String CHROOT_DIR = "/data/bridge";
 
-    private static final String CHROOT = "/data/local/stryker/release";
+    private static final String CHROOT = "/data/local/stryker-tux/release";
 
     /** Host file that records the PID of the capture process we launched, so cleanup kills only ours. */
     public static final String PID_FILE = "/data/local/tmp/stryker_bridge.pid";

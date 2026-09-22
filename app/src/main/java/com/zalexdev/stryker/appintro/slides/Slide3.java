@@ -204,8 +204,8 @@ public class Slide3 extends Fragment {
                     }
                     core.deleteFile("/sdcard/Stryker/exploits/");
                     core.copyFile(core.context.getFilesDir().getAbsolutePath() + "/checker.py",
-                            "/data/local/stryker/release/exploits/checker.py");
-                    core.copyFile("/data/local/stryker/release/exploits/", "/sdcard/Stryker/exploits");
+                            "/data/local/stryker-tux/release/exploits/checker.py");
+                    core.copyFile("/data/local/stryker-tux/release/exploits/", "/sdcard/Stryker/exploits");
                     core.chmodFolder(core.context.getFilesDir().getAbsolutePath());
                     markStage(InstallStage.DEPLOYING_EXPLOITS, RowState.DONE);
                     log(LogLevel.SUCCESS, "Exploits deployed to /sdcard/Stryker/exploits");
@@ -348,7 +348,7 @@ public class Slide3 extends Fragment {
     private boolean clear() {
         core.chmodFolder(core.context.getFilesDir().getAbsolutePath() + "/");
         core.createFolder(core.getStorage() + "/Stryker/");
-        core.createFolder("/data/local/stryker");
+        core.createFolder("/data/local/stryker-tux");
         // Any live mount under the chroot root counts, not just a fully assembled one: a chroot
         // from before 4.5R binds the whole /sdcard inside itself, and both the extract below and
         // purgeChroot would otherwise run straight across it into the user's real storage.
