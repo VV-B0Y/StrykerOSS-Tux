@@ -250,7 +250,7 @@
                             android:layout_marginTop="2dp"
                             android:ellipsize="end"
                             android:maxLines="1"
-                            android:text="Debian toolset at /data/local/stryker/release"
+                            android:text="Debian toolset at /data/local/stryker-tux/release"
                             android:textColor="@color/grey"
                             android:textSize="11sp" />
                     </LinearLayout>
