@@ -3,6 +3,8 @@ package com.zalexdev.stryker.engine;
 import android.content.Context;
 import android.util.Log;
 
+import com.zalexdev.stryker.module.VmTemplate;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -201,6 +203,87 @@ public final class VmRegistry {
         vms.put(id, info);
         save();
         return info;
+    }
+
+    /** Freezes a VM's disk into the template library (name + description + CPU/RAM defaults). */
+    public synchronized VmTemplate saveAsTemplate(String vmId, String name, String description)
+            throws IOException {
+        VmInfo src = vms.get(vmId);
+        if (src == null) throw new IllegalArgumentException("source VM not found: " + vmId);
+        String tname = (name == null || name.trim().isEmpty()) ? (src.name + "-template") : name.trim();
+        File tdir = new File(RootlessPaths.templatesDir(app), tname);
+        if (!tdir.exists() && !tdir.mkdirs()) throw new IOException("cannot create " + tdir);
+        File srcImg = RootlessPaths.rootfs(app, vmId);
+        if (!srcImg.exists()) throw new IOException("source disk missing: " + srcImg);
+        File dstImg = new File(tdir, "rootfs.img");
+        copySparse(srcImg, dstImg);
+
+        com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(app);
+        int cpus = VmSpecs.effectiveCpus(app, core, src.index);
+        int ram = VmSpecs.effectiveRamMb(app, core, src.index);
+        try {
+            JSONObject meta = new JSONObject();
+            meta.put("name", tname);
+            meta.put("description", description == null ? "" : description);
+            meta.put("cpus", cpus);
+            meta.put("ram", ram);
+            try (FileWriter fw = new FileWriter(new File(tdir, "template.json"))) { fw.write(meta.toString()); }
+        } catch (org.json.JSONException je) {
+            throw new IOException("template metadata failed", je);
+        }
+        return new VmTemplate(tname, description == null ? "" : description,
+                dstImg.getAbsolutePath(), cpus, ram);
+    }
+
+    /** Instantiates a new VM from a template (sparse clone of the frozen disk) with its defaults. */
+    public synchronized VmInfo createFromTemplate(VmTemplate t, String name)
+            throws IllegalStateException, IOException {
+        if (t == null) throw new IllegalArgumentException("template is null");
+        if (atCapacity()) throw new IllegalStateException("VM limit of " + MAX_VMS + " reached");
+        int index = nextFreeIndex();
+        String id = "vm" + index;
+        File dstDir = RootlessPaths.vmDir(app, id);
+        if (!dstDir.exists() && !dstDir.mkdirs()) throw new IOException("cannot create " + dstDir);
+        File srcImg = new File(t.rootfsPath);
+        if (!srcImg.exists()) throw new IOException("template disk missing: " + srcImg);
+        copySparse(srcImg, RootlessPaths.rootfs(app, id));
+
+        VmInfo info = new VmInfo(id, index,
+                name == null || name.trim().isEmpty() ? t.name : name.trim());
+        vms.put(id, info);
+        save();
+
+        com.zalexdev.stryker.utils.Core core = new com.zalexdev.stryker.utils.Core(app);
+        VmSpecs.setCpus(app, core, index, t.defaultCpus);
+        VmSpecs.setRamMb(app, core, index, t.defaultRamMb);
+        return info;
+    }
+
+    /** Scans the template library for saved templates. */
+    public synchronized List<VmTemplate> listTemplates() {
+        List<VmTemplate> out = new ArrayList<>();
+        File root = RootlessPaths.templatesDir(app);
+        File[] dirs = root.listFiles();
+        if (dirs == null) return out;
+        for (File d : dirs) {
+            if (!d.isDirectory()) continue;
+            File img = new File(d, "rootfs.img");
+            if (!img.exists()) continue;
+            String name = d.getName();
+            String desc = "";
+            int cpus = 0, ram = 0;
+            File meta = new File(d, "template.json");
+            if (meta.exists()) {
+                try {
+                    JSONObject j = new JSONObject(readAll(meta));
+                    desc = j.optString("description", "");
+                    cpus = j.optInt("cpus", 0);
+                    ram = j.optInt("ram", 0);
+                } catch (Throwable ignored) {}
+            }
+            out.add(new VmTemplate(name, desc, img.getAbsolutePath(), cpus, ram));
+        }
+        return out;
     }
 
     private int nextFreeIndex() {

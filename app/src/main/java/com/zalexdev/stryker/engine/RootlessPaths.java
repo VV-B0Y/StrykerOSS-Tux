@@ -30,6 +30,8 @@ public final class RootlessPaths {
     public static File registryFile(Context c){ return new File(vmsDir(c), "registry.json"); }
     /** Which VM the UI is currently focused on ("vm0"/"vm1"); read by the terminal module too. */
     public static File selectedFile(Context c){ return new File(base(c), ".selected"); }
+    /** Library of frozen, reusable VM images (the template store). */
+    public static File templatesDir(Context c){ return new File(base(c), "templates"); }
 
     // ---- per-VM ----
 
