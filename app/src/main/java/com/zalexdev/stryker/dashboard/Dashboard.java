@@ -860,7 +860,9 @@ public class Dashboard extends Fragment {
     }
 
     private void checkPermission() {
-        if (context.checkSelfPermission(WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            core.requestAllFilesAccess(activity);
+        } else if (context.checkSelfPermission(WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
                     activity,
                     new String[]{WRITE_EXTERNAL_STORAGE},

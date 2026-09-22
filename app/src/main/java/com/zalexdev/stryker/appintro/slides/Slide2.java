@@ -106,9 +106,9 @@ public class Slide2 extends Fragment {
             // ticked optimistically.
             if (rooted || rootless || canRootless) {
                 if (rooted) {
-                    core.customCommand("pm grant com.zalexdev.stryker android.permission.WRITE_EXTERNAL_STORAGE", true);
-                    core.customCommand("pm grant com.zalexdev.stryker android.permission.READ_EXTERNAL_STORAGE", true);
-                    core.customCommand("dumpsys deviceidle whitelist +com.zalexdev.stryker", true);
+                    core.customCommand("pm grant com.strykeross.tux android.permission.WRITE_EXTERNAL_STORAGE", true);
+                    core.customCommand("pm grant com.strykeross.tux android.permission.READ_EXTERNAL_STORAGE", true);
+                    core.customCommand("dumpsys deviceidle whitelist +com.strykeross.tux", true);
                 }
 
                 core.putString("vnc_passwd", "stryker");
@@ -223,7 +223,7 @@ public class Slide2 extends Fragment {
     private boolean batteryWhitelisted() {
         try {
             android.os.PowerManager pm = (android.os.PowerManager) context.getSystemService(Context.POWER_SERVICE);
-            return pm != null && pm.isIgnoringBatteryOptimizations("com.zalexdev.stryker");
+            return pm != null && pm.isIgnoringBatteryOptimizations("com.strykeross.tux");
         } catch (Throwable t) {
             return false;
         }

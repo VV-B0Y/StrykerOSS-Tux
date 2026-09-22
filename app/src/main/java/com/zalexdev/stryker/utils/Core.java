@@ -1478,7 +1478,11 @@ public class Core {
 
     public static String generateString() {return UUID.randomUUID().toString().replace("-", "");}
     public void checkPermission(Activity activity) {
-        if (context.checkSelfPermission(WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            // Android 11+: WRITE_EXTERNAL_STORAGE is a no-op (declared with maxSdkVersion 32).
+            // Request All-files access instead, which is the only storage grant that works here.
+            requestAllFilesAccess(activity);
+        } else if (context.checkSelfPermission(WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(
                     activity,
                     new String[]{WRITE_EXTERNAL_STORAGE},
