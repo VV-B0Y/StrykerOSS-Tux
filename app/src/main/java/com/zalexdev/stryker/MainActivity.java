@@ -39,6 +39,8 @@ import com.zalexdev.stryker.coremanger.CoreManager;
 import com.zalexdev.stryker.custom.Device;
 import com.zalexdev.stryker.custom.WiFINetwork;
 import com.zalexdev.stryker.dashboard.Dashboard;
+import com.zalexdev.stryker.engine.RootlessEngine;
+import com.zalexdev.stryker.engine.VmRegistry;
 import com.zalexdev.stryker.arsenal.ArsenalFragment;
 import com.zalexdev.stryker.geomac.GeoMac;
 import com.zalexdev.stryker.handshakes.HandshakeStorage;
@@ -95,7 +97,7 @@ public class MainActivity extends AppCompatActivity {
             R.id.hid_item, R.id.usb_arsenal_item, R.id.macchanger_item));
     private static final java.util.Set<Integer> VM_INDEPENDENT_IDS = new java.util.HashSet<>(java.util.Arrays.asList(
             R.id.dasboard_item, R.id.logs_item, R.id.about_item,
-            R.id.wpair_item, R.id.geomac_item));
+            R.id.wpair_item, R.id.geomac_item, R.id.vm_manage_item));
     private MetasploitUtils metasploitUtils;
     private ArrayList<WiFINetwork> networks;
     private ArrayList<Device> devices = new ArrayList<>();
@@ -312,11 +314,96 @@ public class MainActivity extends AppCompatActivity {
                 row.setOnClickListener(v -> {
                     if (drawer.isDrawerOpen(GravityCompat.START)) drawer.closeDrawers();
                     settings.setImageDrawable(ContextCompat.getDrawable(getApplicationContext(), R.drawable.settings));
-                    receiver.changeFragment(rowId);
+                    if (rowId == R.id.vm_manage_item) {
+                        showVmManagement();
+                    } else {
+                        receiver.changeFragment(rowId);
+                    }
                 });
             }
         }
         if (lastSelectedItemId != 0) receiver.changeFragmentQuiet(lastSelectedItemId);
+    }
+
+    private void showVmManagement() {
+        final VmRegistry reg = VmRegistry.get(this);
+        final java.util.List<VmRegistry.VmInfo> vms = reg.list();
+        String[] names = new String[vms.size()];
+        for (int i = 0; i < vms.size(); i++) names[i] = vms.get(i).name;
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Virtual machine management")
+                .setItems(names, (d, idx) -> showVmActions(reg, vms.get(idx)))
+                .setNeutralButton("Create VM", (d, w) -> promptCreateVm(reg))
+                .setNegativeButton("Close", null)
+                .show();
+    }
+
+    private void showVmActions(final VmRegistry reg, final VmRegistry.VmInfo vm) {
+        final RootlessEngine eng = reg.engine(this, vm.id);
+        new MaterialAlertDialogBuilder(this)
+                .setTitle(vm.name + " (" + vm.id + ")")
+                .setItems(new String[]{"Start", "Stop", "Clone", "Delete"}, (d, idx) -> {
+                    switch (idx) {
+                        case 0:
+                            new Thread(() -> eng.startBlocking(null), "vm-start").start();
+                            break;
+                        case 1:
+                            new Thread(eng::stop, "vm-stop").start();
+                            break;
+                        case 2:
+                            promptCloneVm(reg, vm);
+                            break;
+                        case 3:
+                            reg.remove(vm.id, true);
+                            android.widget.Toast.makeText(this, vm.name + " deleted",
+                                    android.widget.Toast.LENGTH_SHORT).show();
+                            break;
+                    }
+                })
+                .setNegativeButton("Back", null)
+                .show();
+    }
+
+    private void promptCreateVm(final VmRegistry reg) {
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setHint("VM name");
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Create VM")
+                .setView(input)
+                .setPositiveButton("Create", (d, w) -> {
+                    try {
+                        VmRegistry.VmInfo info = reg.create(input.getText().toString());
+                        android.widget.Toast.makeText(this, "Created " + info.name
+                                + " — provision its disk from the dashboard",
+                                android.widget.Toast.LENGTH_LONG).show();
+                    } catch (Exception e) {
+                        android.widget.Toast.makeText(this, e.getMessage(),
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void promptCloneVm(final VmRegistry reg, final VmRegistry.VmInfo vm) {
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setHint("New VM name");
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Clone " + vm.name)
+                .setView(input)
+                .setPositiveButton("Clone", (d, w) -> new Thread(() -> {
+                    try {
+                        VmRegistry.VmInfo info = reg.clone(vm.id, input.getText().toString(), 0);
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "Cloned " + vm.name + " → " + info.name,
+                                android.widget.Toast.LENGTH_LONG).show());
+                    } catch (Exception e) {
+                        runOnUiThread(() -> android.widget.Toast.makeText(this, e.getMessage(),
+                                android.widget.Toast.LENGTH_SHORT).show());
+                    }
+                }, "vm-clone").start())
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     /** Reflects the active engine on the top banner: "StrykerOSS VIRT" or "StrykerOSS ROOT". */
@@ -1040,6 +1127,7 @@ public class MainActivity extends AppCompatActivity {
         m.put(R.id.dasboard_item,     new DrawerSpec("Dashboard",        R.drawable.home,        0xFF1565C0));
         m.put(R.id.terminal_item,     new DrawerSpec("Terminal",         R.drawable.terminal,    0xFF1565C0));
         m.put(R.id.logs_item,         new DrawerSpec("Logs",             R.drawable.bug_report,  0xFF1565C0));
+        m.put(R.id.vm_manage_item,   new DrawerSpec("VM management",     R.drawable.tune,         0xFF1565C0));
         m.put(R.id.wifi_item,         new DrawerSpec("WiFi networks",    R.drawable.wifi,        0xFF1565C0));
         m.put(R.id.hs_item,           new DrawerSpec("Handshakes",       R.drawable.storage,     0xFF00897B));
         m.put(R.id.macchanger_item,   new DrawerSpec("MAC changer",      R.drawable.password,    0xFF1565C0));

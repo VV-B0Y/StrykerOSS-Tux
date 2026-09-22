@@ -222,6 +222,23 @@
             android:layout_marginTop="18dp"
             android:layout_marginBottom="6dp"
             android:letterSpacing="0.08"
+            android:text="VIRTUAL MACHINE"
+            android:textAllCaps="true"
+            android:textColor="#1565C0"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <include
+            android:id="@+id/vm_manage_item"
+            layout="@layout/drawer_row" />
+
+        <com.google.android.material.textview.MaterialTextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:layout_marginTop="18dp"
+            android:layout_marginBottom="6dp"
+            android:letterSpacing="0.08"
             android:text="WIRELESS"
             android:textAllCaps="true"
             android:textColor="#3949AB"
