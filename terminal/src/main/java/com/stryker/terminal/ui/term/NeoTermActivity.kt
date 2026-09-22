@@ -527,7 +527,7 @@ class NeoTermActivity : AppCompatActivity(), ServiceConnection, SharedPreference
     val selectedVm = selectedVmId()
     val vmIndex = selectedVm.removePrefix("vm").toIntOrNull() ?: 0
     val rootless = java.io.File(filesDir, "rootless/vms/$selectedVm/.active").exists()
-    val label = if (rootless) com.stryker.terminal.ui.other.SuUtils.vmName() else "chroot"
+    val label = if (rootless) com.stryker.terminal.ui.other.SuUtils.vmName(selectedVm) else "chroot"
     val parameter = ShellParameter().callback(sessionCallback)
     if (rootless) {
       parameter.executablePath("pty:127.0.0.1:${1051 + vmIndex * 1000}")

@@ -23,8 +23,9 @@ public class SuUtils {
         return new java.io.File(ROOTLESS_MARKER).exists();
     }
 
-    /** Display name of the primary VM (vm0), for the terminal's console indicator. */
-    public static String vmName(){
+    /** Display name of the given VM (id like "vm0"/"vm2"), for the terminal's console indicator. */
+    public static String vmName(String id){
+        final String target = (id == null || id.isEmpty()) ? "vm0" : id;
         try {
             java.io.File reg = new java.io.File(NeoTermPath.ROOT_PATH + "/rootless/vms/registry.json");
             StringBuilder sb = new StringBuilder();
@@ -33,11 +34,11 @@ public class SuUtils {
             while ((l = br.readLine()) != null) sb.append(l);
             br.close();
             java.util.regex.Matcher m = java.util.regex.Pattern
-                    .compile("\"id\":\"vm0\"[^}]*\"name\":\"([^\"]+)\"")
+                    .compile("\"id\":\"" + target + "\"[^}]*\"name\":\"([^\"]+)\"")
                     .matcher(sb.toString());
-            return m.find() ? m.group(1) : "VM 1";
+            return m.find() ? m.group(1) : target;
         } catch (Exception e) {
-            return "VM 1";
+            return target;
         }
     }
 
