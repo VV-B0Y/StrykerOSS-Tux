@@ -71,6 +71,33 @@ public final class VmRegistry {
         return vms.get(id);
     }
 
+    /** The VM the UI is focused on, persisted to {@code rootless/.selected} (default vm0). */
+    public synchronized String selected() {
+        File f = RootlessPaths.selectedFile(app);
+        if (f.exists()) {
+            try {
+                String id = readAll(f).trim();
+                if (vms.containsKey(id)) return id;
+            } catch (Throwable ignored) {}
+        }
+        return DEFAULT_ID;
+    }
+
+    /** Sets the selected VM (no-op if the id isn't a registered VM). */
+    public synchronized void select(String id) {
+        if (!vms.containsKey(id)) return;
+        try {
+            File f = RootlessPaths.selectedFile(app);
+            if (f.getParentFile() != null) f.getParentFile().mkdirs();
+            try (FileWriter fw = new FileWriter(f)) {
+                fw.write(id);
+                fw.flush();
+            }
+        } catch (Throwable t) {
+            Log.w(TAG, "select(" + id + ") failed: " + t.getMessage());
+        }
+    }
+
     public synchronized int count() {
         return vms.size();
     }

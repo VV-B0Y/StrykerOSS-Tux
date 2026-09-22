@@ -524,11 +524,13 @@ class NeoTermActivity : AppCompatActivity(), ServiceConnection, SharedPreference
     val sessionCallback = TermSessionCallback()
     val viewClient = TermViewClient(this)
 
-    val rootless = java.io.File(filesDir, "rootless/vms/vm0/.active").exists()
+    val selectedVm = selectedVmId()
+    val vmIndex = selectedVm.removePrefix("vm").toIntOrNull() ?: 0
+    val rootless = java.io.File(filesDir, "rootless/vms/$selectedVm/.active").exists()
     val label = if (rootless) com.stryker.terminal.ui.other.SuUtils.vmName() else "chroot"
     val parameter = ShellParameter().callback(sessionCallback)
     if (rootless) {
-      parameter.executablePath("pty:127.0.0.1:1051")
+      parameter.executablePath("pty:127.0.0.1:${1051 + vmIndex * 1000}")
     } else {
       parameter
         .executablePath("${NeoTermPath.BIN_PATH}/stryker-ch")
@@ -543,6 +545,13 @@ class NeoTermActivity : AppCompatActivity(), ServiceConnection, SharedPreference
 
     addNewTab(tab, createRevealAnimation())
     switchToSession(tab)
+  }
+
+  /** Which VM the drawer is focused on (rootless/.selected), defaulting to vm0. */
+  private fun selectedVmId(): String {
+    val f = java.io.File(filesDir, "rootless/.selected")
+    if (!f.exists()) return "vm0"
+    return try { f.readText().trim().ifEmpty { "vm0" } } catch (e: Throwable) { "vm0" }
   }
 
   @SuppressLint("SdCardPath")

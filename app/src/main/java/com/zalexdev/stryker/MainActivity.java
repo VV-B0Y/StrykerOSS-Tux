@@ -179,6 +179,7 @@ public class MainActivity extends AppCompatActivity {
         engineStatusView = navView;
         engineStatusDrawer = drawer;
         setupEngineDropdown(navView);
+        setupVmDropdown(navView);
         drawer.addDrawerListener(new DrawerLayout.SimpleDrawerListener() {
             @Override
             public void onDrawerOpened(View drawerView) {
@@ -550,6 +551,38 @@ public class MainActivity extends AppCompatActivity {
                 });
             });
         }, "drawer-engine-dropdown").start();
+    }
+
+    /** Drawer dropdown to pick which VM the drawer + terminal operate on (vm0/vm1). */
+    private void setupVmDropdown(View navView) {
+        final android.widget.Spinner spinner = navView.findViewById(R.id.drawer_vm_spinner);
+        if (spinner == null) return;
+        final VmRegistry reg = VmRegistry.get(this);
+        final java.util.List<VmRegistry.VmInfo> vms = reg.list();
+        if (vms.size() < 2) {
+            spinner.setVisibility(View.GONE);
+            return;
+        }
+        final String[] ids = new String[vms.size()];
+        final String[] labels = new String[vms.size()];
+        for (int i = 0; i < vms.size(); i++) { ids[i] = vms.get(i).id; labels[i] = vms.get(i).name; }
+        spinner.setVisibility(View.VISIBLE);
+        android.widget.ArrayAdapter<String> adapter = new android.widget.ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_item, labels);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinner.setAdapter(adapter);
+        String selected = reg.selected();
+        int idx = java.util.Arrays.asList(ids).indexOf(selected);
+        spinner.setSelection(idx < 0 ? 0 : idx, false);
+        spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> p, android.view.View v,
+                                       int pos, long id) {
+                if (pos >= 0 && pos < ids.length) reg.select(ids[pos]);
+            }
+            @Override
+            public void onNothingSelected(android.widget.AdapterView<?> p) {}
+        });
     }
 
     public MetasploitUtils getMetasploitUtils() {
