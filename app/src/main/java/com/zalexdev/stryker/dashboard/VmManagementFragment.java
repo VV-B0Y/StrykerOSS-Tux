@@ -256,14 +256,16 @@ public class VmManagementFragment extends Fragment {
                     reg.remove(vm.id, true);
                     toast(vm.name + " reset — re-provisioning…");
                     startActivity(new Intent(requireContext(), AppIntroActivity.class)
-                            .putExtra(AppIntroActivity.EXTRA_INSTALL_ENGINE, EngineType.ROOTLESS.name()));
+                            .putExtra(AppIntroActivity.EXTRA_INSTALL_ENGINE, EngineType.ROOTLESS.name())
+                            .putExtra(AppIntroActivity.EXTRA_CHANNEL_CHOSEN, true));
                 })
                 .setNeutralButton("Reset to test (650)", (d, w) -> {
                     com.zalexdev.stryker.ota.QemuDownloader.setUseTest(requireContext(), true);
                     reg.remove(vm.id, true);
                     toast(vm.name + " reset to test 650 — re-provisioning…");
                     startActivity(new Intent(requireContext(), AppIntroActivity.class)
-                            .putExtra(AppIntroActivity.EXTRA_INSTALL_ENGINE, EngineType.ROOTLESS.name()));
+                            .putExtra(AppIntroActivity.EXTRA_INSTALL_ENGINE, EngineType.ROOTLESS.name())
+                            .putExtra(AppIntroActivity.EXTRA_CHANNEL_CHOSEN, true));
                 })
                 .setNegativeButton("Cancel", null)
                 .show();

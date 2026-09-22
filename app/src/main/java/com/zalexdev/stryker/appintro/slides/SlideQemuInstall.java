@@ -100,8 +100,33 @@ public class SlideQemuInstall extends Fragment {
 
         buildStageRows(inflater);
 
-        installButton.setOnClickListener(v -> startInstall());
+        installButton.setOnClickListener(v -> {
+            if (channelChosen()) startInstall();
+            else promptChannel();
+        });
         return view;
+    }
+
+    private boolean channelChosen() {
+        return activity != null && activity.getIntent() != null
+                && activity.getIntent().getBooleanExtra(
+                        com.zalexdev.stryker.appintro.AppIntroActivity.EXTRA_CHANNEL_CHOSEN, false);
+    }
+
+    private void promptChannel() {
+        new com.google.android.material.dialog.MaterialAlertDialogBuilder(context)
+                .setTitle("Image channel")
+                .setMessage("Which rootless image should be installed?")
+                .setPositiveButton("Stable (main)", (d, w) -> {
+                    com.zalexdev.stryker.ota.QemuDownloader.setUseTest(context, false);
+                    startInstall();
+                })
+                .setNeutralButton("Test (650)", (d, w) -> {
+                    com.zalexdev.stryker.ota.QemuDownloader.setUseTest(context, true);
+                    startInstall();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void startInstall() {

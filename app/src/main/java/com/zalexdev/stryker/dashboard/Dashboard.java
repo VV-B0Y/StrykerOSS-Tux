@@ -1042,6 +1042,22 @@ public class Dashboard extends Fragment {
     }
 
     private void startHelper(final String name) {
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Image channel")
+                .setMessage("Provision this helper VM with the stable or the 650 test image?")
+                .setPositiveButton("Stable (main)", (d, w) -> {
+                    com.zalexdev.stryker.ota.QemuDownloader.setUseTest(context, false);
+                    doStartHelper(name);
+                })
+                .setNeutralButton("Test (650)", (d, w) -> {
+                    com.zalexdev.stryker.ota.QemuDownloader.setUseTest(context, true);
+                    doStartHelper(name);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void doStartHelper(final String name) {
         final VmRegistry.VmInfo info;
         try {
             info = VmRegistry.get(context).clone("vm0", name, 0);
@@ -1101,6 +1117,22 @@ public class Dashboard extends Fragment {
     }
 
     private void startNewVm(final String name) {
+        new MaterialAlertDialogBuilder(context)
+                .setTitle("Image channel")
+                .setMessage("Provision this VM with the stable or the 650 test image?")
+                .setPositiveButton("Stable (main)", (d, w) -> {
+                    com.zalexdev.stryker.ota.QemuDownloader.setUseTest(context, false);
+                    doStartNewVm(name);
+                })
+                .setNeutralButton("Test (650)", (d, w) -> {
+                    com.zalexdev.stryker.ota.QemuDownloader.setUseTest(context, true);
+                    doStartNewVm(name);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void doStartNewVm(final String name) {
         final VmRegistry.VmInfo info;
         try {
             info = VmRegistry.get(context).create(name);

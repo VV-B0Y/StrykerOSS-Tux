@@ -33,6 +33,8 @@ public class AppIntroActivity extends FragmentActivity {
 
     public static final String EXTRA_MIGRATE = "migrate_legacy_chroot";
     public static final String EXTRA_INSTALL_ENGINE = "install_engine";
+    /** Set when the caller already chose the image channel (main vs test) — suppresses the in-slide picker. */
+    public static final String EXTRA_CHANNEL_CHOSEN = "channel_chosen";
 
     public enum Page { CONSENT, ENGINE, PERMS, PCHECK, INSTALL_CHROOT, INSTALL_QEMU, FINAL }
 

@@ -445,7 +445,8 @@ public class MainActivity extends AppCompatActivity {
                             android.widget.Toast.LENGTH_SHORT).show();
                     startActivity(new Intent(MainActivity.this, AppIntroActivity.class)
                             .putExtra(AppIntroActivity.EXTRA_INSTALL_ENGINE,
-                                    com.zalexdev.stryker.engine.EngineType.ROOTLESS.name()));
+                                    com.zalexdev.stryker.engine.EngineType.ROOTLESS.name())
+                            .putExtra(AppIntroActivity.EXTRA_CHANNEL_CHOSEN, true));
                 })
                 .setNeutralButton("Reset to test (650)", (d, w) -> {
                     com.zalexdev.stryker.ota.QemuDownloader.setUseTest(this, true);
@@ -454,7 +455,8 @@ public class MainActivity extends AppCompatActivity {
                             android.widget.Toast.LENGTH_SHORT).show();
                     startActivity(new Intent(MainActivity.this, AppIntroActivity.class)
                             .putExtra(AppIntroActivity.EXTRA_INSTALL_ENGINE,
-                                    com.zalexdev.stryker.engine.EngineType.ROOTLESS.name()));
+                                    com.zalexdev.stryker.engine.EngineType.ROOTLESS.name())
+                            .putExtra(AppIntroActivity.EXTRA_CHANNEL_CHOSEN, true));
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
