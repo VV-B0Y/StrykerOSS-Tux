@@ -316,7 +316,8 @@ public class MainActivity extends AppCompatActivity {
                     if (drawer.isDrawerOpen(GravityCompat.START)) drawer.closeDrawers();
                     settings.setImageDrawable(ContextCompat.getDrawable(getApplicationContext(), R.drawable.settings));
                     if (rowId == R.id.vm_manage_item) {
-                        showVmManagement();
+                        receiver.changeFragment(R.id.vm_manage_item,
+                                new com.zalexdev.stryker.dashboard.VmManagementFragment(), "vm_management");
                     } else {
                         receiver.changeFragment(rowId);
                     }
