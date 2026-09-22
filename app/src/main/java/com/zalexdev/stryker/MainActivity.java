@@ -450,22 +450,22 @@ public class MainActivity extends AppCompatActivity {
                 .show();
     }
 
-    /** Reflects the active engine on the top banner: "StrykerOSS VIRT" or "StrykerOSS ROOT". */
+    /** Reflects the controlled machine on the banner badge: CHROOT, or the selected VM's name. */
     private void updateBanner(boolean chosen, boolean rootless) {
-        if (logo != null) {
-            logo.setText(chosen ? ("StrykerOSS " + (rootless ? "VIRT" : "ROOT")) : "StrykerOSS");
-        }
+        if (logo != null) logo.setText("StrykerOSS");
         if (engineBadge != null) {
             String label;
             int color;
             if (!chosen) {
-                label = "NONE";
+                label = "NO ENGINE";
                 color = 0xFF757575;
             } else if (rootless) {
-                label = "ROOTLESS";
+                VmRegistry reg = VmRegistry.get(this);
+                VmRegistry.VmInfo vm = reg.get(reg.selected());
+                label = vm != null ? vm.name : "VM";
                 color = 0xFF1565C0;
             } else {
-                label = "ROOT";
+                label = "CHROOT";
                 color = 0xFF2E7D32;
             }
             engineBadge.setText(label);
@@ -554,6 +554,13 @@ public class MainActivity extends AppCompatActivity {
         }, "drawer-engine-dropdown").start();
     }
 
+    /** Re-reads the current engine + selected VM and refreshes the banner badge. */
+    private void refreshBadge() {
+        boolean chosen = com.zalexdev.stryker.engine.EngineType.isChosen(core);
+        boolean rootless = com.zalexdev.stryker.engine.EngineType.isRootless(core);
+        updateBanner(chosen, rootless);
+    }
+
     /** Drawer dropdown to pick which VM the drawer + terminal operate on (vm0/vm1). */
     private void setupVmDropdown(View navView) {
         final android.widget.Spinner spinner = navView.findViewById(R.id.drawer_vm_spinner);
@@ -579,7 +586,10 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onItemSelected(android.widget.AdapterView<?> p, android.view.View v,
                                        int pos, long id) {
-                if (pos >= 0 && pos < ids.length) reg.select(ids[pos]);
+                if (pos >= 0 && pos < ids.length) {
+                    reg.select(ids[pos]);
+                    refreshBadge();
+                }
             }
             @Override
             public void onNothingSelected(android.widget.AdapterView<?> p) {}

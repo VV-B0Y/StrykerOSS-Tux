@@ -158,6 +158,10 @@ public class VmManagementFragment extends Fragment {
 
     private void openTerminal(VmRegistry.VmInfo vm) {
         reg.select(vm.id);
+        if (reg.engine(requireContext(), vm.id).status() == RootlessEngine.State.STOPPED) {
+            toast(vm.name + " is stopped — start it first");
+            return;
+        }
         Intent t = new Intent(requireContext(), com.stryker.terminal.ui.term.NeoTermActivity.class);
         t.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         t.putExtra(com.stryker.terminal.ui.term.NeoTermActivity.EXTRA_NEW_SESSION, true);

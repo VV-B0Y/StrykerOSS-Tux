@@ -203,7 +203,7 @@ public class HostCaptureBridge {
 
     /** Host-direct managed scan (no monitor mode): runs the chroot's iw because /system/bin/iw is absent. */
     public ArrayList<String> hostScan() {
-        return core.customCommandSuC("chroot " + CHROOT + " /sbin/iw dev wlan0 scan 2>&1");
+        return core.customCommandSuC("chroot " + CHROOT + " /sbin/iw dev wlan0 scan 2>&1", 15000);
     }
 
     /** Host-direct packet capture (monitor mode + tcpdump), no chroot dependency. */
