@@ -152,6 +152,16 @@ public final class VmRegistry {
             engines.remove(id);
             if (deleteDisk) deleteRecursively(RootlessPaths.vmDir(app, id));
             save();
+            // Reset the selection if it pointed at the removed VM (avoid a stale .selected).
+            File sel = RootlessPaths.selectedFile(app);
+            if (sel.exists()) {
+                try {
+                    if (id.equals(readAll(sel).trim())) {
+                        sel.delete();
+                        if (vms.containsKey(DEFAULT_ID)) select(DEFAULT_ID);
+                    }
+                } catch (Throwable ignored) {}
+            }
         }
     }
 

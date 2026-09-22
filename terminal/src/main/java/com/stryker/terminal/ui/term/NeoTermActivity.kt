@@ -551,7 +551,10 @@ class NeoTermActivity : AppCompatActivity(), ServiceConnection, SharedPreference
   private fun selectedVmId(): String {
     val f = java.io.File(filesDir, "rootless/.selected")
     if (!f.exists()) return "vm0"
-    return try { f.readText().trim().ifEmpty { "vm0" } } catch (e: Throwable) { "vm0" }
+    val id = try { f.readText().trim() } catch (e: Throwable) { "" }
+    // Guard against a stale id pointing at a deleted VM — only trust it if the VM dir exists.
+    if (id.isNotEmpty() && java.io.File(filesDir, "rootless/vms/$id").isDirectory) return id
+    return "vm0"
   }
 
   @SuppressLint("SdCardPath")
