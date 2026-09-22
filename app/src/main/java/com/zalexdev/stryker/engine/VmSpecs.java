@@ -145,7 +145,8 @@ public final class VmSpecs {
     }
 
     public static int effectiveCpus(Context ctx, Core core, int vmIndex) {
-        int v = core.getInt(K_CPUS, 0);
+        int v = core.getInt(cpusKey(vmIndex), 0);
+        if (v <= 0 && vmIndex == 0) v = core.getInt(K_CPUS, 0);  // legacy global pref = vm0
         if (v <= 0) v = vmIndex <= 0 ? recommendedCpus() : Math.max(1, recommendedCpus() / 2);
         return clamp(v, 1, deviceCores());
     }
@@ -155,9 +156,22 @@ public final class VmSpecs {
     }
 
     public static int effectiveRamMb(Context ctx, Core core, int vmIndex) {
-        int v = core.getInt(K_RAM, 0);
+        int v = core.getInt(ramKey(vmIndex), 0);
+        if (v <= 0 && vmIndex == 0) v = core.getInt(K_RAM, 0);  // legacy global pref = vm0
         if (v <= 0) v = vmIndex <= 0 ? recommendedRamMb(ctx) : Math.max(MIN_RAM_MB, recommendedRamMb(ctx) / 2);
         return clamp(v, MIN_RAM_MB, maxRamMb(ctx));
+    }
+
+    /** Per-VM pref keys (index-suffixed) so each VM keeps its own CPU/RAM. */
+    public static String cpusKey(int vmIndex) { return K_CPUS + "_" + vmIndex; }
+    public static String ramKey(int vmIndex) { return K_RAM + "_" + vmIndex; }
+
+    public static void setCpus(Context ctx, Core core, int vmIndex, int cpus) {
+        core.putInt(cpusKey(vmIndex), clamp(cpus, 1, deviceCores()));
+    }
+
+    public static void setRamMb(Context ctx, Core core, int vmIndex, int ramMb) {
+        core.putInt(ramKey(vmIndex), clamp(ramMb, MIN_RAM_MB, maxRamMb(ctx)));
     }
 
 

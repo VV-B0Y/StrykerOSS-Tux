@@ -121,7 +121,7 @@ public class VmManagementFragment extends Fragment {
         final boolean selected = vm.id.equals(reg.selected());
         new MaterialAlertDialogBuilder(requireContext())
                 .setTitle(vm.name + " (" + vm.id + ")" + (selected ? "  · selected" : ""))
-                .setItems(new String[]{"Start", "Stop", "Open terminal", "Select",
+                .setItems(new String[]{"Start", "Stop", "Open terminal", "Select", "Configure (CPU/RAM)",
                         "Clone", "Snapshot", "Reset", "Delete"}, (d, idx) -> {
                     switch (idx) {
                         case 0:
@@ -134,10 +134,11 @@ public class VmManagementFragment extends Fragment {
                         case 1: new Thread(eng::stop, "vm-stop").start(); break;
                         case 2: openTerminal(vm); break;
                         case 3: reg.select(vm.id); refresh(); break;
-                        case 4: promptClone(vm); break;
-                        case 5: promptSnapshot(vm); break;
-                        case 6: resetVm(vm); break;
-                        case 7:
+                        case 4: promptConfigure(vm); break;
+                        case 5: promptClone(vm); break;
+                        case 6: promptSnapshot(vm); break;
+                        case 7: resetVm(vm); break;
+                        case 8:
                             new MaterialAlertDialogBuilder(requireContext())
                                     .setTitle("Delete " + vm.name)
                                     .setMessage("Delete this VM and its disk? This is destructive.")
@@ -161,6 +162,47 @@ public class VmManagementFragment extends Fragment {
         t.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         t.putExtra(com.stryker.terminal.ui.term.NeoTermActivity.EXTRA_NEW_SESSION, true);
         requireContext().startActivity(t);
+    }
+
+    private void promptConfigure(final VmRegistry.VmInfo vm) {
+        final int curCpus = VmSpecs.effectiveCpus(requireContext(), core, vm.index);
+        final int curRam = VmSpecs.effectiveRamMb(requireContext(), core, vm.index);
+
+        final android.widget.LinearLayout box = new android.widget.LinearLayout(requireContext());
+        box.setOrientation(android.widget.LinearLayout.VERTICAL);
+        box.setPadding(48, 24, 48, 0);
+
+        final android.widget.EditText cpuIn = new android.widget.EditText(requireContext());
+        cpuIn.setHint("vCPUs (1-" + VmSpecs.deviceCores() + ")");
+        cpuIn.setText(String.valueOf(curCpus));
+        cpuIn.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+
+        final android.widget.EditText ramIn = new android.widget.EditText(requireContext());
+        ramIn.setHint("RAM MB (" + VmSpecs.MIN_RAM_MB + "-" + VmSpecs.maxRamMb(requireContext()) + ")");
+        ramIn.setText(String.valueOf(curRam));
+        ramIn.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+
+        box.addView(cpuIn);
+        box.addView(ramIn);
+
+        new MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Configure " + vm.name + " — CPU/RAM")
+                .setView(box)
+                .setPositiveButton("Save", (d, w) -> {
+                    try {
+                        int c = Integer.parseInt(cpuIn.getText().toString().trim());
+                        int r = Integer.parseInt(ramIn.getText().toString().trim());
+                        VmSpecs.setCpus(requireContext(), core, vm.index, c);
+                        VmSpecs.setRamMb(requireContext(), core, vm.index, r);
+                        toast("Saved: " + VmSpecs.effectiveCpus(requireContext(), core, vm.index)
+                                + " vCPU / " + VmSpecs.effectiveRamMb(requireContext(), core, vm.index) + " MB");
+                        refresh();
+                    } catch (NumberFormatException e) {
+                        toast("Enter numbers for CPU and RAM");
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void promptClone(final VmRegistry.VmInfo vm) {
