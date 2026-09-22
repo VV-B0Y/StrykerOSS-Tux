@@ -439,8 +439,18 @@ public class MainActivity extends AppCompatActivity {
                 .setTitle("Reset " + vm.name)
                 .setMessage("Delete this VM's disk and re-provision it from scratch? This is destructive.")
                 .setPositiveButton("Reset", (d, w) -> {
+                    com.zalexdev.stryker.ota.QemuDownloader.setUseTest(this, false);
                     reg.remove(vm.id, true);
                     android.widget.Toast.makeText(this, vm.name + " reset — re-provisioning…",
+                            android.widget.Toast.LENGTH_SHORT).show();
+                    startActivity(new Intent(MainActivity.this, AppIntroActivity.class)
+                            .putExtra(AppIntroActivity.EXTRA_INSTALL_ENGINE,
+                                    com.zalexdev.stryker.engine.EngineType.ROOTLESS.name()));
+                })
+                .setNeutralButton("Reset to test (650)", (d, w) -> {
+                    com.zalexdev.stryker.ota.QemuDownloader.setUseTest(this, true);
+                    reg.remove(vm.id, true);
+                    android.widget.Toast.makeText(this, vm.name + " reset to test 650 — re-provisioning…",
                             android.widget.Toast.LENGTH_SHORT).show();
                     startActivity(new Intent(MainActivity.this, AppIntroActivity.class)
                             .putExtra(AppIntroActivity.EXTRA_INSTALL_ENGINE,

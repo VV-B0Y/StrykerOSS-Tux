@@ -252,8 +252,16 @@ public class VmManagementFragment extends Fragment {
                 .setTitle("Reset " + vm.name)
                 .setMessage("Delete this VM's disk and re-provision it from scratch? This is destructive.")
                 .setPositiveButton("Reset", (d, w) -> {
+                    com.zalexdev.stryker.ota.QemuDownloader.setUseTest(requireContext(), false);
                     reg.remove(vm.id, true);
                     toast(vm.name + " reset — re-provisioning…");
+                    startActivity(new Intent(requireContext(), AppIntroActivity.class)
+                            .putExtra(AppIntroActivity.EXTRA_INSTALL_ENGINE, EngineType.ROOTLESS.name()));
+                })
+                .setNeutralButton("Reset to test (650)", (d, w) -> {
+                    com.zalexdev.stryker.ota.QemuDownloader.setUseTest(requireContext(), true);
+                    reg.remove(vm.id, true);
+                    toast(vm.name + " reset to test 650 — re-provisioning…");
                     startActivity(new Intent(requireContext(), AppIntroActivity.class)
                             .putExtra(AppIntroActivity.EXTRA_INSTALL_ENGINE, EngineType.ROOTLESS.name()));
                 })

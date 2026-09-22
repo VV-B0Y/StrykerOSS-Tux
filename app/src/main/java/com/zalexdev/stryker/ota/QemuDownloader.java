@@ -24,6 +24,7 @@ public final class QemuDownloader {
     }
 
     public static Bundle resolve(Context context) {
+        if (useTest(context)) return testBundle();
         RemoteManifest manifest = ManifestService.fetch(context);
         if (manifest != null && manifest.rootless != null && manifest.rootless.isComplete()) {
             RemoteManifest.RootlessAssets r = manifest.rootless;
@@ -35,5 +36,27 @@ public final class QemuDownloader {
                 new RemoteManifest.Asset(StrykerEndpoints.FALLBACK_ROOTLESS_INITRD, "", 0),
                 new RemoteManifest.Asset(StrykerEndpoints.FALLBACK_ROOTLESS_LIBSLIRP, "", 0),
                 new RemoteManifest.Asset(StrykerEndpoints.FALLBACK_ROOTLESS_ROOTFS, "", 0));
+    }
+
+    public static final String PREF_USE_TEST = "rootless_use_test";
+
+    public static boolean useTest(Context context) {
+        return context.getSharedPreferences(StrykerEndpoints.PREFS, Context.MODE_PRIVATE)
+                .getBoolean(PREF_USE_TEST, false);
+    }
+
+    public static void setUseTest(Context context, boolean value) {
+        context.getSharedPreferences(StrykerEndpoints.PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(PREF_USE_TEST, value).apply();
+    }
+
+    /** The rootless-650 test channel: kernel/initrd/rootfs from rootless-650, qemu+libslirp from main. */
+    private static Bundle testBundle() {
+        return new Bundle(
+                new RemoteManifest.Asset(StrykerEndpoints.FALLBACK_ROOTLESS_QEMU, "", 0),
+                new RemoteManifest.Asset(StrykerEndpoints.TEST_ROOTLESS_KERNEL, "", 0),
+                new RemoteManifest.Asset(StrykerEndpoints.TEST_ROOTLESS_INITRD, "", 0),
+                new RemoteManifest.Asset(StrykerEndpoints.FALLBACK_ROOTLESS_LIBSLIRP, "", 0),
+                new RemoteManifest.Asset(StrykerEndpoints.TEST_ROOTLESS_ROOTFS, "", 0));
     }
 }

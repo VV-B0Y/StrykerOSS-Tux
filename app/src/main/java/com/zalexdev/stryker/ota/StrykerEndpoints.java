@@ -18,6 +18,14 @@ public final class StrykerEndpoints {
     public static final String FALLBACK_ROOTLESS_INITRD   = ROOTLESS_BASE + "initrd.img";
     public static final String FALLBACK_ROOTLESS_ROOTFS   = ROOTLESS_BASE + "rootfs.imgz";
 
+    // Test channel (rootless-650). Only the kernel/initrd/rootfs differ from rootless-main;
+    // qemu + libslirp are unchanged and still come from rootless-main.
+    private static final String ROOTLESS_TEST_BASE =
+            "https://github.com/zalexdev/strykerapp/releases/download/rootless-650/";
+    public static final String TEST_ROOTLESS_KERNEL = ROOTLESS_TEST_BASE + "Image";
+    public static final String TEST_ROOTLESS_INITRD = ROOTLESS_TEST_BASE + "initrd.img";
+    public static final String TEST_ROOTLESS_ROOTFS = ROOTLESS_TEST_BASE + "rootfs.imgz";
+
     public static final String PREFS = "stryker_ota";
 
     private StrykerEndpoints() {
