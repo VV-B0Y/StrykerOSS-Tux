@@ -13,6 +13,28 @@ StrykerOSS bundles a curated set of network, wireless and web security tools int
 
 ---
 
+## StrykerOSS Tux (this fork)
+
+A personal fork that turns StrykerOSS into a general-purpose **VM/container workbench** on Android. The core idea: you aren't limited to the baked-in chroot — you create, configure, template, and re-spin Linux machines for whatever you need, and new features plug in as modules rather than living in the shell.
+
+### Added in this fork
+
+- **Rootless QEMU VM engine** — a second engine alongside the chroot (same guest rootfs), for when root is unavailable or you want a fully isolated guest.
+- **Multi-VM management** — a dedicated screen to create, start, stop, clone, snapshot, reset and delete up to **4 VMs** (2 running simultaneously), with **per-VM CPU/RAM** configuration.
+- **Per-VM terminal** — the built-in terminal opens whichever VM is selected, with a VM picker in the drawer; the banner badge shows the exact machine you're controlling (CHROOT, or the VM's name).
+- **VM template engine** — freeze a configured VM into a reusable template and spin up fresh clones from it (`VmRegistry.saveAsTemplate` / `createFromTemplate`).
+- **Internal-chip WiFi** — passive capture + scanning via the Qualcomm WCN7851 (FastConnect 7800), with a chroot `airodump-ng` bridge and a host-direct managed-scan path.
+- **Module architecture** — `StrykerModule` + `ModuleRegistry`: features register themselves and the core has zero compile-time coupling to them (the seam for the planned Gradle split).
+
+### Planned
+
+- **Containers** — an LXC-style backend with the same template interface as VMs.
+- **Gradle module split** — move each feature into a `:feature:*` Gradle module so features plug in/out without touching the core.
+- **Rebrand + theming** — the "Tux" identity and UI color theming.
+- **Template library** — purpose-built templates (Metasploit, pi-hole, evil-AP, juice-shop, …) to spin up instantly.
+
+---
+
 ## Capabilities
 
 | Module | Description |
