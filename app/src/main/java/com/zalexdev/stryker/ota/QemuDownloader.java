@@ -25,11 +25,11 @@ public final class QemuDownloader {
 
     public static Bundle resolve(Context context) {
         if (useTest(context)) return testBundle();
-        RemoteManifest manifest = ManifestService.fetch(context);
-        if (manifest != null && manifest.rootless != null && manifest.rootless.isComplete()) {
-            RemoteManifest.RootlessAssets r = manifest.rootless;
-            return new Bundle(r.qemu, r.kernel, r.initrd, r.libslirp, r.rootfs);
-        }
+        return mainBundle();
+    }
+
+    /** The stable channel: every artifact from rootless-main. */
+    private static Bundle mainBundle() {
         return new Bundle(
                 new RemoteManifest.Asset(StrykerEndpoints.FALLBACK_ROOTLESS_QEMU, "", 0),
                 new RemoteManifest.Asset(StrykerEndpoints.FALLBACK_ROOTLESS_KERNEL, "", 0),

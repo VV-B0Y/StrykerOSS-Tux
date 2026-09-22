@@ -147,6 +147,8 @@ public final class QemuInstaller {
                 return false;
             }
             QemuDownloader.Bundle b = QemuDownloader.resolve(context);
+            log(p, 1, "Channel: " + (QemuDownloader.useTest(context) ? "TEST (rootless-650)" : "STABLE (rootless-main)")
+                    + " — kernel/initrd/rootfs from this channel; qemu/libslirp unchanged (rootless-main)");
 
             stage(p, Stage.EXTRACTING_QEMU);
             if (!fetch(b.qemu, RootlessPaths.qemuBin(context), "QEMU", p)) return false;
@@ -308,6 +310,8 @@ public final class QemuInstaller {
                 }
             } else {
                 QemuDownloader.Bundle b = QemuDownloader.resolve(context);
+            log(p, 1, "Channel: " + (QemuDownloader.useTest(context) ? "TEST (rootless-650)" : "STABLE (rootless-main)")
+                    + " — kernel/initrd/rootfs from this channel; qemu/libslirp unchanged (rootless-main)");
                 boolean compressed = b.rootfs != null && b.rootfs.url != null
                         && (b.rootfs.url.endsWith(".imgz") || b.rootfs.url.endsWith(".gz"));
                 if (!compressed) {
