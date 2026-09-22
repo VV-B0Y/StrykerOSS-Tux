@@ -201,9 +201,9 @@ public class HostCaptureBridge {
         return !out.isEmpty() && out.get(0).trim().equals("yes");
     }
 
-    /** Host-direct managed scan (no monitor mode, no chroot): returns `iw dev wlan0 scan` output. */
+    /** Host-direct managed scan (no monitor mode): runs the chroot's iw because /system/bin/iw is absent. */
     public ArrayList<String> hostScan() {
-        return core.customCommandSuC("iw dev wlan0 scan 2>&1");
+        return core.customCommandSuC("chroot " + CHROOT + " /sbin/iw dev wlan0 scan 2>&1");
     }
 
     /** Host-direct packet capture (monitor mode + tcpdump), no chroot dependency. */
