@@ -342,7 +342,7 @@ public class MainActivity extends AppCompatActivity {
         final RootlessEngine eng = reg.engine(this, vm.id);
         new MaterialAlertDialogBuilder(this)
                 .setTitle(vm.name + " (" + vm.id + ")")
-                .setItems(new String[]{"Start", "Stop", "Clone", "Delete"}, (d, idx) -> {
+                .setItems(new String[]{"Start", "Stop", "Clone", "Snapshot", "Reset", "Delete"}, (d, idx) -> {
                     switch (idx) {
                         case 0:
                             new Thread(() -> eng.startBlocking(null), "vm-start").start();
@@ -354,6 +354,12 @@ public class MainActivity extends AppCompatActivity {
                             promptCloneVm(reg, vm);
                             break;
                         case 3:
+                            promptSnapshotVm(reg, vm);
+                            break;
+                        case 4:
+                            resetVm(reg, vm);
+                            break;
+                        case 5:
                             reg.remove(vm.id, true);
                             android.widget.Toast.makeText(this, vm.name + " deleted",
                                     android.widget.Toast.LENGTH_SHORT).show();
@@ -402,6 +408,42 @@ public class MainActivity extends AppCompatActivity {
                                 android.widget.Toast.LENGTH_SHORT).show());
                     }
                 }, "vm-clone").start())
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void promptSnapshotVm(final VmRegistry reg, final VmRegistry.VmInfo vm) {
+        final String snapName = vm.name + "-snap-"
+                + new java.text.SimpleDateFormat("ddMM_HHmm", java.util.Locale.ENGLISH).format(new java.util.Date());
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Snapshot " + vm.name)
+                .setMessage("Create a point-in-time copy named \"" + snapName + "\"?")
+                .setPositiveButton("Snapshot", (d, w) -> new Thread(() -> {
+                    try {
+                        VmRegistry.VmInfo info = reg.clone(vm.id, snapName, 0);
+                        runOnUiThread(() -> android.widget.Toast.makeText(this,
+                                "Snapshot saved: " + info.name, android.widget.Toast.LENGTH_LONG).show());
+                    } catch (Exception e) {
+                        runOnUiThread(() -> android.widget.Toast.makeText(this, e.getMessage(),
+                                android.widget.Toast.LENGTH_SHORT).show());
+                    }
+                }, "vm-snapshot").start())
+                .setNegativeButton("Cancel", null)
+                .show();
+    }
+
+    private void resetVm(final VmRegistry reg, final VmRegistry.VmInfo vm) {
+        new MaterialAlertDialogBuilder(this)
+                .setTitle("Reset " + vm.name)
+                .setMessage("Delete this VM's disk and re-provision it from scratch? This is destructive.")
+                .setPositiveButton("Reset", (d, w) -> {
+                    reg.remove(vm.id, true);
+                    android.widget.Toast.makeText(this, vm.name + " reset — re-provisioning…",
+                            android.widget.Toast.LENGTH_SHORT).show();
+                    startActivity(new Intent(MainActivity.this, AppIntroActivity.class)
+                            .putExtra(AppIntroActivity.EXTRA_INSTALL_ENGINE,
+                                    com.zalexdev.stryker.engine.EngineType.ROOTLESS.name()));
+                })
                 .setNegativeButton("Cancel", null)
                 .show();
     }
