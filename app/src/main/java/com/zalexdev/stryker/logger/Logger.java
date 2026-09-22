@@ -81,7 +81,7 @@ public class Logger {
     @SuppressLint("SdCardPath")
     public void generateNmapReport(String ip, ArrayList<String> output) {
         SimpleDateFormat sdf = new SimpleDateFormat("_dd-MM-yyyy_HH-mm-ss", Locale.US);
-        @SuppressLint("SdCardPath") String path = "/data/data/com.zalexdev.stryker/files/reports/";
+        @SuppressLint("SdCardPath") String path = "/data/data/" + BuildConfig.APPLICATION_ID + "/files/reports/";
         File folder = new File(path);
         folder.mkdirs();
         String filename = ip + sdf.format(new Date()) + ".txt";

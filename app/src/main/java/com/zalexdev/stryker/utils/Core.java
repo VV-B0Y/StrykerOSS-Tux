@@ -1357,7 +1357,7 @@ public class Core {
         String vendor = "";
         try {
             if (db == null || !db.isOpen()){
-                db = SQLiteDatabase.openDatabase("/data/data/com.zalexdev.stryker/files/vendors.db", null, SQLiteDatabase.OPEN_READONLY);
+                db = SQLiteDatabase.openDatabase(context.getFilesDir().getAbsolutePath() + "/vendors.db", null, SQLiteDatabase.OPEN_READONLY);
             }
             Cursor cursor = db.rawQuery("select MacPrefix,VendorName from macvendor where MacPrefix LIKE '%"+mac.substring(0,8).toUpperCase(Locale.ROOT)+"%' COLLATE NOCASE", null);
             if (cursor.moveToFirst()) {
@@ -1375,7 +1375,7 @@ public class Core {
         String model = "";
         try {
             if (dbCodename == null || !dbCodename.isOpen()){
-                dbCodename = SQLiteDatabase.openDatabase("/data/data/com.zalexdev.stryker/files/codenames.db", null, SQLiteDatabase.OPEN_READONLY);
+                dbCodename = SQLiteDatabase.openDatabase(context.getFilesDir().getAbsolutePath() + "/codenames.db", null, SQLiteDatabase.OPEN_READONLY);
             }
             Cursor cursor = dbCodename.rawQuery("SELECT manufacture,model FROM codename WHERE codename = '"+codename+"';", null);
 
@@ -1581,12 +1581,12 @@ public class Core {
 
     public void disableMagiskNotification() {
 
-                if (contains(customCommand("/data/data/com.zalexdev.stryker/files/sqlite3 "
+                if (contains(customCommand(context.getFilesDir().getAbsolutePath() + "/sqlite3 "
                         + "/data/adb/magisk.db"
                         + " \"UPDATE policies SET logging='0',notification='0' WHERE package_name='"
-                        + "com.zalexdev.stryker"
+                        + "com.strykeross.tux"
                         + "';\""), "no such"))
-                {customCommand("/data/data/com.zalexdev.stryker/files/sqlite3 "
+                {customCommand(context.getFilesDir().getAbsolutePath() + "/sqlite3 "
                                         + "/data/adb/magisk.db"
                                         + " \"UPDATE policies SET logging='0',notification='0' WHERE uid='"
                                         + android.os.Process.myUid()

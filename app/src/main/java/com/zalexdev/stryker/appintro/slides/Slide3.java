@@ -49,8 +49,9 @@ import java.util.Locale;
 public class Slide3 extends Fragment {
 
     @SuppressLint("SdCardPath")
-    private static final String DOWNLOADED_CHROOT_PATH =
-            "/data/data/com.zalexdev.stryker/files/chroot64-debian.tar.gz";
+    private String chrootPath() {
+        return core.context.getFilesDir().getAbsolutePath() + "/chroot64-debian.tar.gz";
+    }
 
     private static final int NOTIFICATION_ID = 34;
 
@@ -179,7 +180,7 @@ public class Slide3 extends Fragment {
                     log(LogLevel.SUCCESS, "Archive extracted");
 
                     notificationManager.cancel(NOTIFICATION_ID);
-                    core.deleteFile(DOWNLOADED_CHROOT_PATH);
+                    core.deleteFile(chrootPath());
 
                     markStage(InstallStage.MOUNTING, RowState.ACTIVE);
                     log(LogLevel.STEP, "Mounting chroot via bootroot");
@@ -270,7 +271,7 @@ public class Slide3 extends Fragment {
                 .setProgress(100, 0, true);
         notificationManager.notify(NOTIFICATION_ID, notification.build());
 
-        File outFile = new File(DOWNLOADED_CHROOT_PATH);
+        File outFile = new File(chrootPath());
         downloadStartMs = System.currentTimeMillis();
         final int[] lastPercent = {-1};
         final long[] lastUiMs = {0};
@@ -388,9 +389,9 @@ public class Slide3 extends Fragment {
             extractFailure = core.tarFailureReason();
             return false;
         }
-        log(LogLevel.CMD, tar + " -xzf " + DOWNLOADED_CHROOT_PATH + " -C /data/local/stryker/");
+        log(LogLevel.CMD, tar + " -xzf " + chrootPath() + " -C /data/local/stryker-tux/");
         ArrayList<String> out = core.customCommand(
-                tar + " -xzf " + DOWNLOADED_CHROOT_PATH + " -C /data/local/stryker/ 2>&1"
+                tar + " -xzf " + chrootPath() + " -C /data/local/stryker-tux/ 2>&1"
                         + "; echo " + TAR_RC + "$?", 0);
 
         Integer rc = null;
