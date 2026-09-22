@@ -30,6 +30,7 @@ import com.google.android.material.textfield.TextInputEditText;
 import com.zalexdev.stryker.R;
 import com.zalexdev.stryker.custom.WiFINetwork;
 import com.zalexdev.stryker.handshakes.utils.BruteHandshake;
+import com.zalexdev.stryker.handshakes.utils.WordlistManager;
 import com.zalexdev.stryker.utils.Core;
 
 import java.io.File;
@@ -145,20 +146,53 @@ public class HandshakesAdapter extends RecyclerView.Adapter<HandshakesAdapter.Vi
     }
 
     private void startBrute(ViewHolder h, String path, String finalMac) {
-        ArrayList<String> get = core.getListFiles(core.getShareRoot() + "/wordlists");
-        if (get.isEmpty()) {
-            toaster(context.getString(R.string.hs_wordlist_empty));
+        final WordlistManager wlm = new WordlistManager(context, core);
+        ArrayList<String> names = wlm.listNames();
+        if (names.isEmpty()) {
+            // No wordlist yet — offer to fetch one instead of a dead-end toast.
+            new MaterialAlertDialogBuilder(context)
+                    .setTitle(R.string.hs_wordlist_empty)
+                    .setMessage(R.string.hs_wordlist_empty_body)
+                    .setPositiveButton(R.string.hs_wordlist_download, (d, w) -> downloadRockyouThen(h, path, finalMac, wlm))
+                    .setNegativeButton(R.string.cancel, null)
+                    .show();
             return;
         }
-        String[] names = new String[get.size()];
-        for (int i = 0; i < get.size(); i++) {
-            names[i] = get.get(i).replace(core.getShareRoot() + "/wordlists/", "");
+        String[] arr = names.toArray(new String[0]);
+        final String[] full = new String[names.size()];
+        for (int i = 0; i < names.size(); i++) {
+            full[i] = new File(wlm.wordlistDir(), names.get(i)).getAbsolutePath();
         }
         new MaterialAlertDialogBuilder(context)
                 .setTitle(R.string.hs_wordlist_title)
-                .setItems(names, (di, idx) -> launchBrute(h, path, finalMac, get.get(idx)))
+                .setItems(arr, (di, idx) -> launchBrute(h, path, finalMac, full[idx]))
                 .setNegativeButton(R.string.cancel, null)
                 .show();
+    }
+
+    private void downloadRockyouThen(ViewHolder h, String path, String finalMac, WordlistManager wlm) {
+        h.progress.setVisibility(View.VISIBLE);
+        h.progress.setTextColor(Color.parseColor("#9E9E9E"));
+        h.progress.setText(R.string.hs_wordlist_downloading);
+        toaster(context.getString(R.string.hs_wordlist_downloading));
+        new Thread(() -> {
+            File f = wlm.downloadRockyou((done, total) -> activity.runOnUiThread(() -> {
+                if (total > 0) {
+                    h.progress.setText(context.getString(R.string.hs_wordlist_downloading) + " " + (done * 100 / total) + "%");
+                } else {
+                    h.progress.setText(context.getString(R.string.hs_wordlist_downloading) + " " + humanSize(done));
+                }
+            }));
+            activity.runOnUiThread(() -> {
+                if (f != null) {
+                    toaster(context.getString(R.string.hs_wordlist_ready));
+                    launchBrute(h, path, finalMac, f.getAbsolutePath());
+                } else {
+                    h.progress.setTextColor(Color.parseColor("#D32F2F"));
+                    h.progress.setText(R.string.hs_wordlist_download_failed);
+                }
+            });
+        }).start();
     }
 
     private void launchBrute(ViewHolder h, String path, String finalMac, String wordlistPath) {

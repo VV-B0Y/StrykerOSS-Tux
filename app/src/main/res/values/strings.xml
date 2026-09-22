@@ -548,6 +548,11 @@ Storage is only consumed as the guest writes, and space freed inside the VM is r
     <string name="hs_rename_hint">new-name.cap</string>
     <string name="hs_wordlist_title">Pick a wordlist</string>
     <string name="hs_wordlist_empty">Drop wordlists into /sdcard/Stryker/wordlists</string>
+    <string name="hs_wordlist_empty_body">No wordlist found. Download rockyou.txt (~140 MB, 14M passwords) to crack locally?</string>
+    <string name="hs_wordlist_download">Download rockyou.txt</string>
+    <string name="hs_wordlist_downloading">Downloading wordlist…</string>
+    <string name="hs_wordlist_ready">Wordlist ready — cracking…</string>
+    <string name="hs_wordlist_download_failed">Wordlist download failed</string>
     <string name="hs_password_label">Password</string>
     <string name="hs_password_copy">Copy password</string>
     <string name="hs_password_copied">Password copied</string>
