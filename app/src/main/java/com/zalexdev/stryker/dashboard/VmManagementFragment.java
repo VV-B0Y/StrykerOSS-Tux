@@ -124,7 +124,13 @@ public class VmManagementFragment extends Fragment {
                 .setItems(new String[]{"Start", "Stop", "Open terminal", "Select",
                         "Clone", "Snapshot", "Reset", "Delete"}, (d, idx) -> {
                     switch (idx) {
-                        case 0: new Thread(() -> eng.startBlocking(null), "vm-start").start(); break;
+                        case 0:
+                            if (!reg.canStart()) {
+                                toast("2 VMs already running — stop one first");
+                                break;
+                            }
+                            new Thread(() -> eng.startBlocking(null), "vm-start").start();
+                            break;
                         case 1: new Thread(eng::stop, "vm-stop").start(); break;
                         case 2: openTerminal(vm); break;
                         case 3: reg.select(vm.id); refresh(); break;

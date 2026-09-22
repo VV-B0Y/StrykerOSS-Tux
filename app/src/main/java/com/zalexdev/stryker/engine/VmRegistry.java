@@ -30,7 +30,8 @@ public final class VmRegistry {
 
     private static final String TAG = "VmRegistry";
 
-    public static final int MAX_VMS = 2;
+    public static final int MAX_VMS = 4;
+    public static final int MAX_RUNNING = 2;
     public static final String DEFAULT_ID = "vm0";
 
     private static volatile VmRegistry instance;
@@ -104,6 +105,20 @@ public final class VmRegistry {
 
     public synchronized boolean atCapacity() {
         return vms.size() >= MAX_VMS;
+    }
+
+    /** VMs whose engine is currently booting or ready (the "running" set). */
+    public synchronized int runningCount() {
+        int n = 0;
+        for (Map.Entry<String, RootlessEngine> e : engines.entrySet()) {
+            if (e.getValue().status() != RootlessEngine.State.STOPPED) n++;
+        }
+        return n;
+    }
+
+    /** False when MAX_RUNNING VMs are already up — start callers should block on this. */
+    public synchronized boolean canStart() {
+        return runningCount() < MAX_RUNNING;
     }
 
     /** Allocates the next free VM slot (id + index) with the given display name. */
