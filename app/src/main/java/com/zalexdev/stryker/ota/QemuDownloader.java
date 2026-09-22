@@ -55,6 +55,19 @@ public final class QemuDownloader {
                 .edit().putBoolean(PREF_USE_TEST, value).apply();
     }
 
+    /** Channel the on-disk rootfs.img was last installed from, so a same-channel reset can skip it. */
+    public static final String PREF_INSTALLED_TEST = "rootless_installed_test";
+
+    public static boolean installedTest(Context context) {
+        return context.getSharedPreferences(StrykerEndpoints.PREFS, Context.MODE_PRIVATE)
+                .getBoolean(PREF_INSTALLED_TEST, false);
+    }
+
+    public static void setInstalledTest(Context context, boolean value) {
+        context.getSharedPreferences(StrykerEndpoints.PREFS, Context.MODE_PRIVATE)
+                .edit().putBoolean(PREF_INSTALLED_TEST, value).apply();
+    }
+
     /** The rootless-650 test channel: kernel/initrd/rootfs from rootless-650, qemu+libslirp from main. */
     private static Bundle testBundle() {
         return new Bundle(

@@ -163,27 +163,34 @@ public final class QemuInstaller {
 
             stage(p, Stage.DECOMPRESSING_ROOTFS);
             File rootfs = RootlessPaths.rootfs(context);
-            boolean compressed = b.rootfs != null && b.rootfs.url != null
-                    && (b.rootfs.url.endsWith(".imgz") || b.rootfs.url.endsWith(".gz"));
-            if (!compressed) {
-                if (!fetch(b.rootfs, rootfs, "rootfs.img", p)) return false;
-            } else {
-                File archive = new File(base, "rootfs.download");
-                if (!fetch(b.rootfs, archive, "rootfs", p)) return false;
-                log(p, 1, "Decompressing rootfs (this can take a minute)");
-                if (!gunzipFile(archive, rootfs, p)) {
+            boolean rootfsFresh = rootfs.exists() && rootfs.length() > 0
+                    && QemuDownloader.installedTest(context) == QemuDownloader.useTest(context);
+            if (!rootfsFresh) {
+                boolean compressed = b.rootfs != null && b.rootfs.url != null
+                        && (b.rootfs.url.endsWith(".imgz") || b.rootfs.url.endsWith(".gz"));
+                if (!compressed) {
+                    if (!fetch(b.rootfs, rootfs, "rootfs.img", p)) return false;
+                } else {
+                    File archive = new File(base, "rootfs.download");
+                    if (!fetch(b.rootfs, archive, "rootfs", p)) return false;
+                    log(p, 1, "Decompressing rootfs (this can take a minute)");
+                    if (!gunzipFile(archive, rootfs, p)) {
+                        //noinspection ResultOfMethodCallIgnored
+                        archive.delete();
+                        return false;
+                    }
                     //noinspection ResultOfMethodCallIgnored
                     archive.delete();
-                    return false;
                 }
-                //noinspection ResultOfMethodCallIgnored
-                archive.delete();
+            } else {
+                log(p, 2, "rootfs.img already present for this channel — skipping");
             }
 
             stage(p, Stage.FINALIZING);
             ensureMinimumDisk(context, p);
             boolean ok = RootlessEngine.get(context).isInstalled();
             if (ok) {
+                QemuDownloader.setInstalledTest(context, QemuDownloader.useTest(context));
                 stage(p, Stage.DONE);
                 log(p, 2, "Rootless engine installed");
             } else {
@@ -202,6 +209,11 @@ public final class QemuInstaller {
         if (asset == null || !asset.isUsable()) {
             log(p, 3, label + ": no download URL in the manifest");
             return false;
+        }
+        // Already on disk at the expected size → skip the download (same-channel reset / re-run).
+        if (dest.exists() && asset.size > 0 && dest.length() == asset.size) {
+            log(p, 2, label + " already present (" + mb(dest.length()) + ") — skipping download");
+            return true;
         }
         log(p, 1, "GET " + asset.url);
         com.zalexdev.stryker.ota.VerifiedDownloader.Result r =
