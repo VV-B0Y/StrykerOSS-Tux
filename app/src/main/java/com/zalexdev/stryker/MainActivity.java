@@ -440,11 +440,15 @@ public class MainActivity extends AppCompatActivity {
         new Thread(() -> {
             final boolean chrootOk = com.zalexdev.stryker.engine.EngineType.chrootAvailable(core);
             final boolean vmOk = com.zalexdev.stryker.engine.EngineType.rootlessAvailable(core);
+            final boolean rootOk = com.zalexdev.stryker.engine.EngineType.rootAvailable(core);
+            final boolean rootlessSup = com.zalexdev.stryker.engine.EngineType.rootlessSupported(getApplicationContext());
 
             final java.util.List<String> labels = new java.util.ArrayList<>();
             final java.util.List<com.zalexdev.stryker.engine.EngineType> types = new java.util.ArrayList<>();
             if (chrootOk) { labels.add("Chroot (root)"); types.add(com.zalexdev.stryker.engine.EngineType.CHROOT); }
             if (vmOk) { labels.add("Rootless VM"); types.add(com.zalexdev.stryker.engine.EngineType.ROOTLESS); }
+            if (!vmOk && rootlessSup) { labels.add("Install rootless VM…"); types.add(null); }
+            if (!chrootOk && rootOk) { labels.add("Install chroot…"); types.add(null); }
 
             runOnUiThread(() -> {
                 if (isFinishing() || isDestroyed()) return;
@@ -469,6 +473,17 @@ public class MainActivity extends AppCompatActivity {
                                                android.view.View view, int position, long id) {
                         if (position < 0 || position >= types.size()) return;
                         com.zalexdev.stryker.engine.EngineType chosen = types.get(position);
+                        if (chosen == null) {
+                            // "Install X…" entry — re-enter onboarding at the install step.
+                            String engine = labels.get(position).startsWith("Install rootless")
+                                    ? com.zalexdev.stryker.engine.EngineType.ROOTLESS.name()
+                                    : com.zalexdev.stryker.engine.EngineType.CHROOT.name();
+                            startActivity(new Intent(MainActivity.this, AppIntroActivity.class)
+                                    .putExtra(AppIntroActivity.EXTRA_INSTALL_ENGINE, engine));
+                            int activeIdx = types.indexOf(com.zalexdev.stryker.engine.EngineType.active(core));
+                            spinner.setSelection(activeIdx < 0 ? 0 : activeIdx, false);
+                            return;
+                        }
                         if (chosen == com.zalexdev.stryker.engine.EngineType.active(core)) return;
                         com.zalexdev.stryker.engine.EngineType.persist(core, chosen);
                         // Clean up any capture the previous engine left running before we switch.

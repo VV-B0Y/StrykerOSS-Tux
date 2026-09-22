@@ -32,6 +32,7 @@ import java.util.Set;
 public class AppIntroActivity extends FragmentActivity {
 
     public static final String EXTRA_MIGRATE = "migrate_legacy_chroot";
+    public static final String EXTRA_INSTALL_ENGINE = "install_engine";
 
     public enum Page { CONSENT, ENGINE, PERMS, PCHECK, INSTALL_CHROOT, INSTALL_QEMU, FINAL }
 
@@ -76,6 +77,18 @@ public class AppIntroActivity extends FragmentActivity {
                 .start();
 
         bindProgress(0);
+
+        // Re-entry to install a specific engine (e.g. "install rootless" from the drawer).
+        String installEngine = getIntent() != null
+                ? getIntent().getStringExtra(EXTRA_INSTALL_ENGINE) : null;
+        if (installEngine != null) {
+            try {
+                EngineType type = EngineType.valueOf(installEngine);
+                applyEngineFlow(type);
+                jumpTo(type == EngineType.ROOTLESS ? Page.INSTALL_QEMU : Page.INSTALL_CHROOT);
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     public void applyEngineFlow(EngineType type) {
