@@ -35,7 +35,7 @@
     }
   },
   "rootless": {
-    "version": "rootless-main",
+    "version": "rootless-650",
     "note": "Local dev ships these inside the APK under assets/rootless/. This block is the OTA fallback; arm64-v8a only.",
     "qemu": {
       "url": "https://github.com/zalexdev/strykerapp/releases/download/rootless-main/qemu-system-aarch64",
@@ -43,14 +43,14 @@
       "size": 43800304
     },
     "kernel": {
-      "url": "https://github.com/zalexdev/strykerapp/releases/download/rootless-main/Image",
-      "sha256": "cbe59a02e7ea979a150661032440c94e2c4db0b735af2416e11ae5cac15a58e4",
-      "size": 37605312
+      "url": "https://github.com/zalexdev/strykerapp/releases/download/rootless-650/Image",
+      "sha256": "80b5fd85c1280e11fcaee721bbad1781ebc91b0370ea49da6729fcecc8649d24",
+      "size": 28676104
     },
     "initrd": {
-      "url": "https://github.com/zalexdev/strykerapp/releases/download/rootless-main/initrd.img",
-      "sha256": "655f3ef013e7818e9ee874cf3b44a4c0bdc8a586c986cf237cb74c41862dfd02",
-      "size": 38301815
+      "url": "https://github.com/zalexdev/strykerapp/releases/download/rootless-650/initrd.img",
+      "sha256": "30cc3d91d673de371946764678d534eab2e80669e393009915a3785e6e4f4017",
+      "size": 16308339
     },
     "libslirp": {
       "url": "https://github.com/zalexdev/strykerapp/releases/download/rootless-main/libslirp.so",
@@ -58,9 +58,9 @@
       "size": 1145496
     },
     "rootfs": {
-      "url": "https://github.com/zalexdev/strykerapp/releases/download/rootless-main/rootfs.imgz",
-      "sha256": "f80c2b1e2433c3036aa745da2a5935cf5dd61b65b17bbeabae87b49bd68a12ef",
-      "size": 427974567
+      "url": "https://github.com/zalexdev/strykerapp/releases/download/rootless-650/rootfs.imgz",
+      "sha256": "dfa844f8b9cebe121b60ecdb4da9c41ffd701430b2c9d0f6bdc90c66d2c26c82",
+      "size": 321664844
     }
   },
   "app": {
