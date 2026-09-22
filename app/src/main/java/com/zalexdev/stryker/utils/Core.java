@@ -104,6 +104,9 @@ public class Core {
     /** Alternative internal-chip path that runs entirely on the host (managed `iw scan` + tcpdump),
      *  with no chroot dependency — for side-by-side comparison against the airodump bridge. */
     public final static String WIFI_INTERNAL_HOST = "internal-host";
+    /** Placeholder sentinel that means "pass the USB dongle into the VM and adopt whatever
+     *  interface it exposes" — the guest has no interface until the passthrough happens. */
+    public final static String WIFI_USB = "usb";
 
     /** Marker written after a successful chroot install. The name IS the rootfs generation:
      *  "4.0" is the old Alpine tree, "6.0" the Debian one. */

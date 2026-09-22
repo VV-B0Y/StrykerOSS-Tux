@@ -250,6 +250,9 @@ public class Wifi extends Fragment {
                             ifs = core.getInterfacesList();
                             if (ifs.contains(target)) { up = true; break; }
                             if (ifs.contains(target + "mon")) { target = target + "mon"; up = true; break; }
+                            // USB sentinel: the dongle was just passed in — adopt the first
+                            // interface that shows up instead of waiting 10s for "usb".
+                            if (Core.WIFI_USB.equals(target) && !ifs.isEmpty()) break;
                             try { Thread.sleep(500); } catch (InterruptedException ignored) {}
                         }
                         if (!alive.get()) return;
@@ -535,21 +538,25 @@ public class Wifi extends Fragment {
     private void showWifiInterfacePicker(ArrayList<String> interfaces) {
         if (context == null || activity == null) return;
         final boolean rootless = core.isRootless();
-        int extra = rootless ? 3 : 1;
+        int extra = rootless ? 4 : 1;
         String[] items = new String[interfaces.size() + extra];
         int idx = 0;
         int internalPos = -1;
         int internalHostPos = -1;
+        int usbPos = -1;
         if (rootless) {
             items[idx++] = context.getString(R.string.internal_wifi);
             internalPos = 0;
             items[idx++] = context.getString(R.string.internal_wifi_host);
             internalHostPos = 1;
+            items[idx++] = context.getString(R.string.usb_wifi_adapter);
+            usbPos = 2;
         }
         for (String iface : interfaces) items[idx++] = iface;
         items[idx] = context.getString(R.string.customvalue);
         final int iPos = internalPos;
         final int ihPos = internalHostPos;
+        final int uPos = usbPos;
         new MaterialAlertDialogBuilder(context)
                 .setTitle(R.string.pick)
                 .setItems(items, (di, i) -> {
@@ -559,6 +566,8 @@ public class Wifi extends Fragment {
                         applyWifiInterface(Core.WIFI_INTERNAL);
                     } else if (i == ihPos) {
                         applyWifiInterface(Core.WIFI_INTERNAL_HOST);
+                    } else if (i == uPos) {
+                        applyWifiInterface(Core.WIFI_USB);
                     } else {
                         applyWifiInterface(items[i]);
                     }
@@ -593,7 +602,8 @@ public class Wifi extends Fragment {
     }
 
     private void applyWifiInterface(String iface) {
-        if (Core.WIFI_INTERNAL.equals(iface) || Core.WIFI_INTERNAL_HOST.equals(iface)) {
+        if (Core.WIFI_INTERNAL.equals(iface) || Core.WIFI_INTERNAL_HOST.equals(iface)
+                || Core.WIFI_USB.equals(iface)) {
             core.putString("wlan_wifi", iface);
         } else {
             core.setWifiInterface(iface);
