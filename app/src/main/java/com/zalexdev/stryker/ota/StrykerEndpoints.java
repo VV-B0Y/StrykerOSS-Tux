@@ -24,7 +24,8 @@ public final class StrykerEndpoints {
             "https://github.com/zalexdev/strykerapp/releases/download/rootless-650/";
     public static final String TEST_ROOTLESS_KERNEL = ROOTLESS_TEST_BASE + "Image";
     public static final String TEST_ROOTLESS_INITRD = ROOTLESS_TEST_BASE + "initrd.img";
-    public static final String TEST_ROOTLESS_ROOTFS = ROOTLESS_TEST_BASE + "rootfs.imgz";
+    public static final String TEST_ROOTLESS_ROOTFS =
+            "https://github.com/VV-B0Y/StrykerOSS-Tux/releases/download/rootless-650-fixed/rootfs.imgz";
 
     public static final String PREFS = "stryker_ota";
 

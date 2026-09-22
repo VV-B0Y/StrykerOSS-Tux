@@ -80,6 +80,6 @@ public final class QemuDownloader {
                 new RemoteManifest.Asset(StrykerEndpoints.FALLBACK_ROOTLESS_LIBSLIRP,
                         "226372426fda32c9fccd8e831d0901a86bfff3c3e6f7a60336d6dde149f756c4", 1145496L),
                 new RemoteManifest.Asset(StrykerEndpoints.TEST_ROOTLESS_ROOTFS,
-                        "dfa844f8b9cebe121b60ecdb4da9c41ffd701430b2c9d0f6bdc90c66d2c26c82", 321664844L));
+                        "7d2eb79e8af552f964f5f848d5f5209bfa991099f982e27e9bc91e1f160625ef", 322016905L));
     }
 }
