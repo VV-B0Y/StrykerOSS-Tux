@@ -887,7 +887,7 @@ public class MainActivity extends AppCompatActivity {
             landOn(new Dashboard());
             refreshEngineStatus();
             runOnUiThread(() -> {
-                schedulePromo();
+                // schedulePromo();  // disabled: "Enjoying Stryker?" / GitHub-star promo dialog
                 checkForUsb();
             });
             if (!isConnected()) {
