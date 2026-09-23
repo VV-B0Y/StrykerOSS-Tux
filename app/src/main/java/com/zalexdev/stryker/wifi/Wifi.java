@@ -1157,6 +1157,8 @@ public class Wifi extends Fragment {
         TextView resulttext = dialog.findViewById(R.id.wifi_result);
         MaterialButton stop = dialog.findViewById(R.id.stop);
         TextView timertext = dialog.findViewById(R.id.timer_wifi);
+        TextView successtext = dialog.findViewById(R.id.success_wifi);
+        TextView progress = dialog.findViewById(R.id.progress_wifi);
         MaterialCardView info = dialog.findViewById(R.id.info_card);
         info.setVisibility(View.VISIBLE);
         View outputcard = dialog.findViewById(R.id.output_card);
@@ -1165,6 +1167,14 @@ public class Wifi extends Fragment {
         final String hsDir = core.getShareRoot() + "/hs";
         final String capturedDir = core.getShareRoot() + "/captured";
         hcxdump = null;
+
+        final Set<String> networkSet = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        final Set<String> clientSet = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        final Set<String> pmkidSet = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        final Set<String> hsSet = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        final Pattern apRow = Pattern.compile(
+                "\\d+\\s+\\d{1,2}:\\d{2}:\\d{2}\\s+(.)\\s(.)\\s(.)\\s(.)\\s(.)\\s+((?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2})");
+        final Pattern mac = Pattern.compile("([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}");
 
         outputtext.setText("Starting monitor mode...\n");
         new Thread(() -> {
@@ -1197,14 +1207,28 @@ public class Wifi extends Fragment {
 
                 @Override
                 public void onNewLine(String line) {
-                    if (isAdded() && alive.get()) {
-                        String t = line.replace("\r", "").trim();
-                        if (t.isEmpty()) return;
-                        safeUi(() -> {
-                            outputtext.append(t + "\n");
-                            smoothScrool(outputtext);
-                        });
+                    if (!isAdded() || !alive.get()) return;
+                    String t = line.replace("\r", "").trim();
+                    if (t.isEmpty()) return;
+                    Matcher ap = apRow.matcher(t);
+                    if (ap.find()) {
+                        String m = ap.group(6);
+                        networkSet.add(m);
+                        if ("+".equals(ap.group(4))) pmkidSet.add(m);
+                        if ("+".equals(ap.group(2)) && "+".equals(ap.group(3))) hsSet.add(m);
+                    } else {
+                        Matcher cm = mac.matcher(t);
+                        java.util.List<String> macs = new java.util.ArrayList<>();
+                        while (cm.find()) macs.add(cm.group());
+                        if (macs.size() >= 2) clientSet.add(macs.get(macs.size() - 1));
                     }
+                    safeUi(() -> {
+                        outputtext.append(t + "\n");
+                        smoothScrool(outputtext);
+                        timertext.setText("PMKID & handshakes: " + (pmkidSet.size() + hsSet.size()));
+                        progress.setText("Networks: " + networkSet.size());
+                        successtext.setText("Clients: " + clientSet.size());
+                    });
                 }
 
                 @Override
@@ -1212,7 +1236,7 @@ public class Wifi extends Fragment {
                 }
             };
             hcxdump.setNoLog(true);
-            safeUi(() -> timertext.setText("Capturing PMKIDs + handshakes..."));
+            safeUi(() -> timertext.setText("PMKID & handshakes: 0"));
         }).start();
 
         stop.setOnClickListener(v -> {
@@ -1236,21 +1260,49 @@ public class Wifi extends Fragment {
                         hsCount = parseCount(l);
                     }
                 }
-                String strDate = new SimpleDateFormat("dd-MM_HH-mm", Locale.ENGLISH).format(new Date());
-                String base = capturedDir + "/MassPMKID_" + pmkidCount + "pmkid_" + hsCount + "hs_" + strDate;
-                String dest22000 = base + ".22000";
-                String destCap = base + ".pcapng";
-                boolean saved22000 = saveGuestFile("/sdcard/Stryker/hs/handshakenow-pmkid.22000", dest22000);
-                boolean savedCap = saveGuestFile("/sdcard/Stryker/hs/handshakenow-pmkid.pcapng", destCap);
+                ArrayList<String> hashLines = core.customChrootCommand(
+                        "cat /sdcard/Stryker/hs/handshakenow-pmkid.22000 2>/dev/null");
+                java.util.Map<String, java.util.List<String>> byEssid = new java.util.LinkedHashMap<>();
+                for (String l : hashLines) {
+                    String hl = l.trim();
+                    if (hl.isEmpty() || !hl.startsWith("WPA*")) continue;
+                    String essid = extractEssid(hl);
+                    if (essid.isEmpty()) essid = "unknown";
+                    java.util.List<String> list = byEssid.get(essid);
+                    if (list == null) {
+                        list = new ArrayList<>();
+                        byEssid.put(essid, list);
+                    }
+                    list.add(hl);
+                }
+                String time = new SimpleDateFormat("MM_HH_mm", Locale.ENGLISH).format(new Date());
+                new java.io.File(capturedDir).mkdirs();
+                int savedFiles = 0;
+                StringBuilder savedNames = new StringBuilder();
+                for (java.util.Map.Entry<String, java.util.List<String>> e : byEssid.entrySet()) {
+                    String safeName = e.getKey().replace(" ", "_").replaceAll("[^A-Za-z0-9._-]", "_");
+                    String filename = "PMKID_" + safeName + time + ".22000";
+                    java.io.File f = new java.io.File(capturedDir, filename);
+                    try (java.io.FileWriter fw = new java.io.FileWriter(f)) {
+                        for (String l : e.getValue()) fw.write(l + "\n");
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                        continue;
+                    }
+                    savedFiles++;
+                    if (savedNames.length() > 0) savedNames.append("\n");
+                    savedNames.append(filename);
+                }
                 final int pm = pmkidCount;
                 final int hsc = hsCount;
+                final int sf = savedFiles;
+                final String names = savedNames.toString();
                 safeUi(() -> {
                     StringBuilder sb = new StringBuilder();
                     sb.append("PMKIDs: ").append(pm).append("\n");
                     sb.append("Handshakes: ").append(hsc).append("\n");
-                    if (saved22000) sb.append("Saved: ").append(dest22000);
-                    if (savedCap) sb.append("\nSaved: ").append(destCap);
-                    if (!saved22000 && !savedCap) sb.append("Could not save the capture file");
+                    sb.append("Saved ").append(sf).append(" file(s), one per AP");
+                    if (!names.isEmpty()) sb.append(":\n").append(names);
                     resulttext.setText(sb.toString());
                 });
                 core.monitorManager.disableMonitorMode(core.getHSInterface());
@@ -1516,6 +1568,15 @@ public class Wifi extends Fragment {
         } catch (Exception e) {
             return 0;
         }
+    }
+
+    /** Extract the ESSID (last non-empty field) from a hashcat 22000 line. */
+    private static String extractEssid(String line) {
+        String[] parts = line.split("\\*", -1);
+        for (int i = parts.length - 1; i >= 0; i--) {
+            if (!parts[i].isEmpty()) return parts[i];
+        }
+        return "";
     }
 
     public void smoothScrool(TextView outputtext) {
