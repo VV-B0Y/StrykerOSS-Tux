@@ -1172,8 +1172,12 @@ public class Wifi extends Fragment {
         final Set<String> clientSet = java.util.concurrent.ConcurrentHashMap.newKeySet();
         final Set<String> pmkidSet = java.util.concurrent.ConcurrentHashMap.newKeySet();
         final Set<String> hsSet = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        // hcxdumptool --rds=1 realtime table: " CHA LAST R 1 3 P S MAC-AP ESSID"
         final Pattern apRow = Pattern.compile(
-                "^\\s*\\d+\\|[0-9]{2}:[0-9]{2}:[0-9]{2}\\|(.{6})\\|([0-9a-fA-F]{12})\\|([0-9a-fA-F]{12})\\|");
+                "^\\s*\\d+\\s+[0-9]{2}:[0-9]{2}:[0-9]{2}\\s+(.)\\s(.)\\s(.)\\s(.)\\s(.)\\s+([0-9a-fA-F]{12})\\s+(.*)$");
+        // client section: " LAST E 2 MAC-AP-ROGUE MAC-CLIENT ESSID"
+        final Pattern clientRow = Pattern.compile(
+                "^\\s*[0-9]{2}:[0-9]{2}:[0-9]{2}\\s+(.)\\s(.)\\s+([0-9a-fA-F]{12})\\s+([0-9a-fA-F]{12})\\s+(.*)$");
 
         outputtext.setText("Starting monitor mode...\n");
         new Thread(() -> {
@@ -1188,7 +1192,7 @@ public class Wifi extends Fragment {
             capIface = core.getHSInterface();
             core.customChrootCommand("mkdir -p /sdcard/Stryker/hs /sdcard/Stryker/captured; "
                     + "rm -f /sdcard/Stryker/hs/handshakenow-pmkid*");
-            String cmd = "hcxdumptool -i " + capIface + " -w /sdcard/Stryker/hs/handshakenow-pmkid.pcapng";
+            String cmd = "hcxdumptool --rds=1 -i " + capIface + " -w /sdcard/Stryker/hs/handshakenow-pmkid.pcapng";
             hcxdump = new AdvancedProcess(activity, context, cmd, true) {
                 @Override
                 public void onFinished(ArrayList<String> outputList) {
@@ -1211,13 +1215,16 @@ public class Wifi extends Fragment {
                     if (t.isEmpty()) return;
                     Matcher ap = apRow.matcher(t);
                     if (ap.find()) {
-                        String flags = ap.group(1);
-                        String clientMac = ap.group(2);
-                        String apMac = ap.group(3);
+                        String apMac = ap.group(6);
                         networkSet.add(apMac);
-                        if (!"000000000000".equals(clientMac)) clientSet.add(clientMac);
-                        if (flags.length() > 5 && flags.charAt(5) == '+') pmkidSet.add(apMac);
-                        if (flags.length() > 4 && flags.charAt(4) == '+') hsSet.add(apMac);
+                        if ("+".equals(ap.group(4))) pmkidSet.add(apMac);  // P flag
+                        if ("+".equals(ap.group(3))) hsSet.add(apMac);    // 3 flag (M3 handshake)
+                    } else {
+                        Matcher cl = clientRow.matcher(t);
+                        if (cl.find()) {
+                            String clientMac = cl.group(4);
+                            if (!"000000000000".equals(clientMac)) clientSet.add(clientMac);
+                        }
                     }
                     safeUi(() -> {
                         outputtext.append(t + "\n");
@@ -1277,7 +1284,7 @@ public class Wifi extends Fragment {
                 int savedFiles = 0;
                 StringBuilder savedNames = new StringBuilder();
                 for (java.util.Map.Entry<String, java.util.List<String>> e : byEssid.entrySet()) {
-                    String safeName = e.getKey().replace(" ", "_").replaceAll("[^A-Za-z0-9._-]", "_");
+                    String safeName = e.getKey().replace(" ", "_");
                     String filename = "PMKID_" + safeName + time + ".22000";
                     java.io.File f = new java.io.File(capturedDir, filename);
                     try (java.io.FileWriter fw = new java.io.FileWriter(f)) {
