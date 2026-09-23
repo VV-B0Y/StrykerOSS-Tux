@@ -456,6 +456,7 @@ Storage is only consumed as the guest writes, and space freed inside the VM is r
     <string name="wifi_card_unknown_vendor">Unknown vendor</string>
     <string name="wifi_fab_pixie">Auto Pixie Dust</string>
     <string name="wifi_fab_hs">Mass handshake capture</string>
+    <string name="wifi_fab_pmkid">Mass PMKID capture</string>
     <string name="wifi_fab_deauth">Mass deauthentication</string>
     <string name="wifi_fab_capture">Capture packets (internal)</string>
 

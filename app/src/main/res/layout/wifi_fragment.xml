@@ -429,6 +429,14 @@
         app:label_text="@string/wifi_fab_hs" />
 
     <com.nambimobile.widgets.efab.FabOption
+        android:id="@+id/fab_pmkid"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:fab_icon="@drawable/key"
+        app:fab_orientation="portrait"
+        app:label_text="@string/wifi_fab_pmkid" />
+
+    <com.nambimobile.widgets.efab.FabOption
         android:id="@+id/fab_deauth"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"

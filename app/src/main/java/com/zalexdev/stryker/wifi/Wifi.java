@@ -88,6 +88,7 @@ public class Wifi extends Fragment {
     public ArrayList<String> hs = new ArrayList<>();
     public AdvancedProcess mdk4;
     public AdvancedProcess airodump;
+    public AdvancedProcess hcxdump;
     public ArrayList<WiFINetwork> networksHS = new ArrayList<>();
     private RecyclerView mRecyclerView;
     private WiFIAdapter mAdapter;
@@ -181,6 +182,8 @@ public class Wifi extends Fragment {
         fabOption3.setOnClickListener(v -> runDeauth());
         FabOption fabOption4 = view.findViewById(R.id.fab_capture);
         fabOption4.setOnClickListener(v -> runCapture());
+        FabOption fabOption5 = view.findViewById(R.id.fab_pmkid);
+        fabOption5.setOnClickListener(v -> runPMKID());
         return view;
     }
 
@@ -1140,6 +1143,124 @@ public class Wifi extends Fragment {
         dialog.show();
     }
 
+    public void runPMKID() {
+        final Dialog dialog = new Dialog(context);
+        dialog.setContentView(R.layout.wifi_dialog_hs);
+        Window window = dialog.getWindow();
+        if (window != null) {
+            window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+            window.setLayout(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        }
+        dialog.setCancelable(false);
+
+        TextView outputtext = dialog.findViewById(R.id.wifi_output);
+        TextView resulttext = dialog.findViewById(R.id.wifi_result);
+        MaterialButton stop = dialog.findViewById(R.id.stop);
+        TextView timertext = dialog.findViewById(R.id.timer_wifi);
+        MaterialCardView info = dialog.findViewById(R.id.info_card);
+        info.setVisibility(View.VISIBLE);
+        View outputcard = dialog.findViewById(R.id.output_card);
+        outputtext.setMovementMethod(new ScrollingMovementMethod());
+
+        final String hsDir = core.getShareRoot() + "/hs";
+        final String capturedDir = core.getShareRoot() + "/captured";
+        hcxdump = null;
+
+        outputtext.setText("Starting monitor mode...\n");
+        new Thread(() -> {
+            final String requestedIface = core.getHSInterface();
+            safeUi(() -> outputtext.setText("Starting monitor mode on " + requestedIface + "...\n"));
+            boolean monitor = core.monitorManager.enableMonitorMode(requestedIface);
+            String capIface = requestedIface;
+            if (!monitor) {
+                safeUi(() -> outputtext.setText(getString(R.string.wifi_monitor_failed, requestedIface)));
+                return;
+            }
+            capIface = core.getHSInterface();
+            core.customChrootCommand("mkdir -p /sdcard/Stryker/hs /sdcard/Stryker/captured; "
+                    + "rm -f /sdcard/Stryker/hs/handshakenow-pmkid*");
+            String cmd = "hcxdumptool -i " + capIface + " -w /sdcard/Stryker/hs/handshakenow-pmkid.pcapng";
+            hcxdump = new AdvancedProcess(activity, context, cmd, true) {
+                @Override
+                public void onFinished(ArrayList<String> outputList) {
+                    if (isAdded() && alive.get()) {
+                        outputtext.setText("Attack finished due to error.\n");
+                    }
+                    new Thread(() -> {
+                        core.customChrootCommand("pkill -f hcxdumptool 2>/dev/null");
+                        try {
+                            core.monitorManager.disableMonitorMode(core.getHSInterface());
+                            core.monitorManager.disableMonitorMode(core.getDeauthInterface());
+                        } catch (Throwable ignored) {}
+                    }, "pmkid-cleanup").start();
+                }
+
+                @Override
+                public void onNewLine(String line) {
+                    if (isAdded() && alive.get()) {
+                        String t = line.replace("\r", "").trim();
+                        if (t.isEmpty()) return;
+                        safeUi(() -> {
+                            outputtext.append(t + "\n");
+                            smoothScrool(outputtext);
+                        });
+                    }
+                }
+
+                @Override
+                public void onEvent(String line) {
+                }
+            };
+            hcxdump.setNoLog(true);
+            safeUi(() -> timertext.setText("Capturing PMKIDs + handshakes..."));
+        }).start();
+
+        stop.setOnClickListener(v -> {
+            if (hcxdump != null) hcxdump.kill();
+            core.customChrootCommand("pkill -f hcxdumptool 2>/dev/null");
+            stop.setVisibility(View.GONE);
+            dialog.setCancelable(true);
+            outputcard.setVisibility(View.GONE);
+            resulttext.setVisibility(View.VISIBLE);
+            resulttext.setText("Stopping and converting...");
+            new Thread(() -> {
+                ArrayList<String> conv = core.customChrootCommand(
+                        "hcxpcapngtool -o /sdcard/Stryker/hs/handshakenow-pmkid.22000 "
+                                + "/sdcard/Stryker/hs/handshakenow-pmkid.pcapng 2>&1");
+                int pmkidCount = 0;
+                int hsCount = 0;
+                for (String l : conv) {
+                    if (l.contains("RSN PMKID written to 22000 hash file")) {
+                        pmkidCount = parseCount(l);
+                    } else if (l.contains("EAPOL pairs written to 22000 hash file")) {
+                        hsCount = parseCount(l);
+                    }
+                }
+                String strDate = new SimpleDateFormat("dd-MM_HH-mm", Locale.ENGLISH).format(new Date());
+                String base = capturedDir + "/MassPMKID_" + pmkidCount + "pmkid_" + hsCount + "hs_" + strDate;
+                String dest22000 = base + ".22000";
+                String destCap = base + ".pcapng";
+                boolean saved22000 = saveGuestFile("/sdcard/Stryker/hs/handshakenow-pmkid.22000", dest22000);
+                boolean savedCap = saveGuestFile("/sdcard/Stryker/hs/handshakenow-pmkid.pcapng", destCap);
+                final int pm = pmkidCount;
+                final int hsc = hsCount;
+                safeUi(() -> {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("PMKIDs: ").append(pm).append("\n");
+                    sb.append("Handshakes: ").append(hsc).append("\n");
+                    if (saved22000) sb.append("Saved: ").append(dest22000);
+                    if (savedCap) sb.append("\nSaved: ").append(destCap);
+                    if (!saved22000 && !savedCap) sb.append("Could not save the capture file");
+                    resulttext.setText(sb.toString());
+                });
+                core.monitorManager.disableMonitorMode(core.getHSInterface());
+                core.monitorManager.disableMonitorMode(core.getDeauthInterface());
+            }).start();
+        });
+
+        dialog.show();
+    }
+
     public void runDeauth() {
         final Dialog dialog = new Dialog(context);
         dialog.setContentView(R.layout.wifi_dialog_hs);
@@ -1366,6 +1487,37 @@ public class Wifi extends Fragment {
         }
     }
 
+    /** Pull any guest file (base64 over the chroot) to a host-side destination. */
+    private boolean saveGuestFile(String guestPath, String dest) {
+        try {
+            ArrayList<String> out = core.customChrootCommand("base64 -w0 " + guestPath + " 2>/dev/null");
+            StringBuilder sb = new StringBuilder();
+            for (String l : out) sb.append(l.trim());
+            if (sb.length() == 0) return false;
+            byte[] bytes = android.util.Base64.decode(sb.toString(), android.util.Base64.NO_WRAP);
+            java.io.File f = new java.io.File(dest);
+            if (f.getParentFile() != null) f.getParentFile().mkdirs();
+            try (java.io.FileOutputStream fos = new java.io.FileOutputStream(f)) {
+                fos.write(bytes);
+            }
+            return f.isFile() && f.length() > 0;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /** Extract the trailing integer from an hcxpcapngtool summary line (e.g. "...hash file.....: 3"). */
+    private static int parseCount(String line) {
+        try {
+            String[] parts = line.trim().split(":");
+            String last = parts[parts.length - 1].trim();
+            return Integer.parseInt(last.replaceAll("[^0-9]", ""));
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     public void smoothScrool(TextView outputtext) {
         if (outputtext != null && outputtext.getLayout() != null) {
             int lineCount = outputtext.getLineCount();
@@ -1474,6 +1626,12 @@ public class Wifi extends Fragment {
         try {
             if (airodump != null) {
                 airodump.kill();
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            if (hcxdump != null) {
+                hcxdump.kill();
             }
         } catch (Exception ignored) {
         }
