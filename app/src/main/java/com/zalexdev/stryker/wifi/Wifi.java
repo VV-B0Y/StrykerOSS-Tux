@@ -1173,8 +1173,7 @@ public class Wifi extends Fragment {
         final Set<String> pmkidSet = java.util.concurrent.ConcurrentHashMap.newKeySet();
         final Set<String> hsSet = java.util.concurrent.ConcurrentHashMap.newKeySet();
         final Pattern apRow = Pattern.compile(
-                "\\d+\\s+\\d{1,2}:\\d{2}:\\d{2}\\s+(.)\\s(.)\\s(.)\\s(.)\\s(.)\\s+((?:[0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2})");
-        final Pattern mac = Pattern.compile("([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}");
+                "^\\s*\\d+\\|[0-9]{2}:[0-9]{2}:[0-9]{2}\\|(.{6})\\|([0-9a-fA-F]{12})\\|([0-9a-fA-F]{12})\\|");
 
         outputtext.setText("Starting monitor mode...\n");
         new Thread(() -> {
@@ -1212,15 +1211,13 @@ public class Wifi extends Fragment {
                     if (t.isEmpty()) return;
                     Matcher ap = apRow.matcher(t);
                     if (ap.find()) {
-                        String m = ap.group(6);
-                        networkSet.add(m);
-                        if ("+".equals(ap.group(4))) pmkidSet.add(m);
-                        if ("+".equals(ap.group(2)) && "+".equals(ap.group(3))) hsSet.add(m);
-                    } else {
-                        Matcher cm = mac.matcher(t);
-                        java.util.List<String> macs = new java.util.ArrayList<>();
-                        while (cm.find()) macs.add(cm.group());
-                        if (macs.size() >= 2) clientSet.add(macs.get(macs.size() - 1));
+                        String flags = ap.group(1);
+                        String clientMac = ap.group(2);
+                        String apMac = ap.group(3);
+                        networkSet.add(apMac);
+                        if (!"000000000000".equals(clientMac)) clientSet.add(clientMac);
+                        if (flags.length() > 5 && flags.charAt(5) == '+') pmkidSet.add(apMac);
+                        if (flags.length() > 4 && flags.charAt(4) == '+') hsSet.add(apMac);
                     }
                     safeUi(() -> {
                         outputtext.append(t + "\n");
@@ -1570,13 +1567,35 @@ public class Wifi extends Fragment {
         }
     }
 
-    /** Extract the ESSID (last non-empty field) from a hashcat 22000 line. */
+    /** Extract the ESSID (hex-decoded) from a hashcat 22000 line (field index 5). */
     private static String extractEssid(String line) {
         String[] parts = line.split("\\*", -1);
-        for (int i = parts.length - 1; i >= 0; i--) {
-            if (!parts[i].isEmpty()) return parts[i];
+        if (parts.length > 5) {
+            String hex = parts[5];
+            if (!hex.isEmpty()) {
+                String ssid = hexToUtf8(hex);
+                return ssid.isEmpty() ? hex : ssid;
+            }
         }
         return "";
+    }
+
+    /** Decode a hex string to UTF-8 (hashcat 22000 stores the ESSID hex-encoded). */
+    private static String hexToUtf8(String hex) {
+        try {
+            int n = hex.length();
+            if (n == 0 || n % 2 != 0) return "";
+            byte[] bytes = new byte[n / 2];
+            for (int i = 0; i < bytes.length; i++) {
+                int hi = Character.digit(hex.charAt(2 * i), 16);
+                int lo = Character.digit(hex.charAt(2 * i + 1), 16);
+                if (hi < 0 || lo < 0) return "";
+                bytes[i] = (byte) ((hi << 4) | lo);
+            }
+            return new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     public void smoothScrool(TextView outputtext) {
